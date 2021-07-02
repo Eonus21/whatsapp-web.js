@@ -89,8 +89,6 @@ class Client extends EventEmitter {
 
         await page.setCacheEnabled(false);
 
-        await page.collectGarbage();
-
         if (credentials)
             await page.authenticate(credentials);
 
