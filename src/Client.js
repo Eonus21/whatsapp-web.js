@@ -76,6 +76,8 @@ class Client extends EventEmitter {
 
         const page = (await browser.pages())[0];
 
+        await page.setCacheEnabled(false)
+
         if (credentials)
             await page.authenticate(credentials);
 
