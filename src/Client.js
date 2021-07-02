@@ -62,6 +62,17 @@ class Client extends EventEmitter {
     }
 
     /**
+     * Calls garbage collector on page
+     */
+    async collectGarbage () {
+        const client = await this.pupPage.target().createCDPSession();
+        await client.send('HeapProfiler.enable');
+        const result = await client.send('HeapProfiler.collectGarbage');
+        await client.send('HeapProfiler.disable');
+        return { result };
+    }
+
+    /**
      * Sets up events and requirements, kicks off authentication request
      * @param {object} [credentials] - Auth credentials for proxy
      * @param {string} credentials.username - Username
@@ -76,7 +87,9 @@ class Client extends EventEmitter {
 
         const page = (await browser.pages())[0];
 
-        await page.setCacheEnabled(false)
+        await page.setCacheEnabled(false);
+
+        await page.collectGarbage();
 
         if (credentials)
             await page.authenticate(credentials);

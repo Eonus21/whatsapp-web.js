@@ -7,6 +7,8 @@ declare namespace WAWebJS {
     export class Client extends EventEmitter {
         constructor(options: ClientOptions)
 
+        collectGarbage(): Promise<{ result:any }>
+
         /** Current connection information */
         public info: ClientInfo
 
