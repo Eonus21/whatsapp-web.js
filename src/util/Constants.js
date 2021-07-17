@@ -52,7 +52,8 @@ exports.Events = {
     STATE_CHANGED: 'change_state',
     BATTERY_CHANGED: 'change_battery',
     BROWSER_CLOSED: 'browser_closed',
-    PAGE_CLOSED: 'page_closed'
+    PAGE_CLOSED: 'page_closed',
+    INCOMING_CALL: 'incoming_call'
 };
 
 /**
