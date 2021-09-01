@@ -37,6 +37,15 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.QueryProduct = window.mR.findModule('queryProduct')[0];
     window.Store.DownloadManager = window.mR.findModule('DownloadManager')[0].default;
     window.Store.Call = window.mR.findModule('CallCollection')[0].default;
+
+    if(!window.Store.Chat._find) {
+        window.Store.Chat._find = e => {
+            const target = window.Store.Chat.get(e);
+            return target ? Promise.resolve(target) : Promise.resolve({
+                id: e
+            });
+        };
+    }
 };
 
 exports.LoadUtils = () => {
@@ -265,9 +274,16 @@ exports.LoadUtils = () => {
         const msg = message.serialize();
         
         msg.isStatusV3 = message.isStatusV3;
-        msg.links = (message.getLinks()).map(link => ({ link: link.href, isSuspicious: link.suspiciousCharacters?.size ? true : false}));
+        msg.links = (message.getLinks()).map(link => ({ 
+            link: link.href, 
+            isSuspicious: Boolean(link.suspiciousCharacters && link.suspiciousCharacters.size)
+        }));
+
         if (msg.buttons) {
             msg.buttons = msg.buttons.serialize();
+        }
+        if(msg.replyButtons) {
+            msg.replyButtons = msg.replyButtons.serialize();
         }
         
         delete msg.pendingAckUpdate;
