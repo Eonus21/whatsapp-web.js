@@ -16,6 +16,14 @@ class InterfaceController {
     async openChatWindow(chatId) {
         await this.pupPage.evaluate(async chatId => {
             let chatWid = window.Store.WidFactory.createWid(chatId);
+            if(!window.Store.Chat._find) {
+                window.Store.Chat._find = e => {
+                    const target = window.Store.Chat.get(e);
+                    return target ? Promise.resolve(target) : Promise.resolve({
+                        id: e
+                    });
+                };
+            }
             let chat = await window.Store.Chat.find(chatWid);
             await window.Store.Cmd.openChatAt(chat);
         }, chatId);

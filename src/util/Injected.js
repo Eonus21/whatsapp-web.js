@@ -6,12 +6,6 @@ exports.ExposeStore = (moduleRaidStr) => {
     // eslint-disable-next-line no-undef
     window.mR = moduleRaid();
     window.Store = window.mR.findModule('Chat')[0].default;
-    window.Store.Chat._find = e => {
-        const target = window.Store.Chat.get(e);
-        return target ? Promise.resolve(target) : Promise.resolve({
-            id: e
-        });
-    };
     window.Store.AppState = window.mR.findModule('STREAM')[0].default;
     window.Store.Conn = window.mR.findModule('Conn')[0].default;
     window.Store.CryptoLib = window.mR.findModule('decryptE2EMedia')[0];
@@ -43,6 +37,14 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.QueryProduct = window.mR.findModule('queryProduct')[0];
     window.Store.DownloadManager = window.mR.findModule('DownloadManager')[0].default;
     window.Store.Call = window.mR.findModule('CallCollection')[0].default;
+    if(!window.Store.Chat._find) {
+        window.Store.Chat._find = e => {
+            const target = window.Store.Chat.get(e);
+            return target ? Promise.resolve(target) : Promise.resolve({
+                id: e
+            });
+        };
+    }
 };
 
 exports.LoadUtils = () => {
@@ -309,6 +311,14 @@ exports.LoadUtils = () => {
 
     window.WWebJS.getChat = async chatId => {
         const chatWid = window.Store.WidFactory.createWid(chatId);
+        if(!window.Store.Chat._find) {
+            window.Store.Chat._find = e => {
+                const target = window.Store.Chat.get(e);
+                return target ? Promise.resolve(target) : Promise.resolve({
+                    id: e
+                });
+            };
+        }
         const chat = await window.Store.Chat.find(chatWid);
         return await window.WWebJS.getChatModel(chat);
     };
