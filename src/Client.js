@@ -393,7 +393,7 @@ class Client extends EventEmitter {
                  * @param {WAState|"NAVIGATION"} reason reason that caused the disconnect
                  */
                 this.emit(Events.DISCONNECTED, state);
-                this.destroy();
+                // this.destroy();
             }
         });
 
@@ -452,7 +452,7 @@ class Client extends EventEmitter {
         // Because WhatsApp Web now reloads when logging out from the device, this also covers that case
         this.pupPage.on('framenavigated', async () => {
             this.emit(Events.DISCONNECTED, 'NAVIGATION');
-            await this.destroy();
+            // await this.destroy();
         });
     }
 
@@ -460,10 +460,10 @@ class Client extends EventEmitter {
      * Closes the client
      */
     async destroy() {
-        if (this._qrRefreshInterval) {
+        if (this?._qrRefreshInterval) {
             clearInterval(this._qrRefreshInterval);
         }
-        await this.pupBrowser.close();
+        await this?.pupBrowser?.close();
     }
 
     /**
