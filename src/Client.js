@@ -182,11 +182,18 @@ class Client extends EventEmitter {
                 */
                 this.emit(Events.QR_RECEIVED, qr);
             };
+            this._qrCount = 0;
             const safeGetQrCode = async () => {
+                if (this._qrCount > 5) {
+                    this.emit(Events.DISCONNECTED, 'CAN_NOT_GET_QR');
+                    try { clearInterval(this._qrRefreshInterval); } catch (e) { console.log(e.message); }
+                    return;
+                }
                 try {
                     await getQrCode();
                 }
                 catch (e) {
+                    this._qrCount ++
                     console.log('get qr code error ' + e.message);
                 }
             };
