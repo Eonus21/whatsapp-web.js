@@ -608,6 +608,11 @@ declare namespace WAWebJS {
          * Gets the order associated with a given message
          */
         getOrder: () => Order,
+        
+        /**
+         * Gets base message data for debugging
+         */
+        getBaseData:() => any
     }
 
     /** ID that represents a message */

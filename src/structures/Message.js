@@ -14,6 +14,7 @@ class Message extends Base {
     constructor(client, data) {
         super(client);
 
+        this.baseData = data;
         if (data) this._patch(data);
     }
 
@@ -437,6 +438,14 @@ class Message extends Base {
             return new Order(this.client, result);
         }
         return undefined;
+    }
+
+    /**
+     * Gets base message data for debugging
+     * @return {any}
+     */
+    async getBaseData() {
+        return this?.baseData;
     }
 }
 

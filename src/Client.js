@@ -193,7 +193,7 @@ class Client extends EventEmitter {
                     await getQrCode();
                 }
                 catch (e) {
-                    this._qrCount ++
+                    this._qrCount ++;
                     console.log('get qr code error ' + e.message);
                 }
             };
