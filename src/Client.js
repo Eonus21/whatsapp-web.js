@@ -197,15 +197,26 @@ class Client extends EventEmitter {
             const safeGetQrCode = async () => {
                 if (this._qrCount > 5) {
                     this.emit(Events.DISCONNECTED, 'CAN_NOT_GET_QR');
-                    try { clearInterval(this._qrRefreshInterval); } catch (e) { console.log(e.message); }
+                    try { 
+                        clearInterval(this._qrRefreshInterval); 
+                    } catch (e) { 
+                        console.log('clear qr interval error, uuid:' + this.options?.uuid + ' ' + e.message);
+                    }
                     return;
                 }
                 try {
                     await getQrCode();
                 }
                 catch (e) {
-                    this._qrCount ++;
                     console.log('get qr code error, uuid:' + this.options?.uuid + ' ' + e.message);
+                    if (this._qrCount > 10) {
+                        try { 
+                            clearInterval(this._qrRefreshInterval); 
+                        } catch (e) { 
+                            console.log('clear qr interval error, uuid:' + this.options?.uuid + ' ' + e.message);
+                        }
+                    }
+                    this._qrCount ++;
                     if (e?.message.indexOf('closed')) 
                         this.emit(Events.DISCONNECTED, 'QR failed')
                 }
@@ -214,7 +225,7 @@ class Client extends EventEmitter {
             this._qrRefreshInterval = setInterval(safeGetQrCode, this.options.qrRefreshIntervalMs);
 
             // Wait for code scan
-            await page.waitForSelector(KEEP_PHONE_CONNECTED_IMG_SELECTOR, { timeout: 0 });
+            await page.waitForSelector(KEEP_PHONE_CONNECTED_IMG_SELECTOR, { timeout: 1000 });
             clearInterval(this._qrRefreshInterval);
             this._qrRefreshInterval = undefined;
 
