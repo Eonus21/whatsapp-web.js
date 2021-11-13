@@ -225,7 +225,7 @@ class Client extends EventEmitter {
             this._qrRefreshInterval = setInterval(safeGetQrCode, this.options.qrRefreshIntervalMs);
 
             // Wait for code scan
-            await page.waitForSelector(KEEP_PHONE_CONNECTED_IMG_SELECTOR, { timeout: 1000 });
+            await page.waitForSelector(KEEP_PHONE_CONNECTED_IMG_SELECTOR, { timeout: 0 });
             clearInterval(this._qrRefreshInterval);
             this._qrRefreshInterval = undefined;
 
