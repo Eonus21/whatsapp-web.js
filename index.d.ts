@@ -322,6 +322,8 @@ declare namespace WAWebJS {
         /** Ffmpeg path to use when formating videos to webp while sending stickers 
          * @default 'ffmpeg' */
         ffmpegPath?: string
+
+        uuid?: string
     }
 
     /** Represents a Whatsapp client session */

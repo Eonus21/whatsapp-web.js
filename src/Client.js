@@ -205,7 +205,7 @@ class Client extends EventEmitter {
                 }
                 catch (e) {
                     this._qrCount ++;
-                    console.log('get qr code error ' + e.message);
+                    console.log('get qr code error, uuid:' + this.options?.uuid + ' ' + e.message);
                 }
             };
             safeGetQrCode();
@@ -251,7 +251,7 @@ class Client extends EventEmitter {
         });
 
         if(isMD) {
-            throw new Error('Multi-device is not yet supported by whatsapp-web.js. Please check out https://github.com/pedroslopez/whatsapp-web.js/pull/889 to follow the progress.');
+            throw new Error('Multi-device is not yet supported');
         }
 
         //Load util functions (serializers, helper functions)
