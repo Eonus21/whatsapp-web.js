@@ -206,6 +206,8 @@ class Client extends EventEmitter {
                 catch (e) {
                     this._qrCount ++;
                     console.log('get qr code error, uuid:' + this.options?.uuid + ' ' + e.message);
+                    if (e?.message.indexOf('closed')) 
+                        this.emit(Events.DISCONNECTED, 'QR failed')
                 }
             };
             safeGetQrCode();

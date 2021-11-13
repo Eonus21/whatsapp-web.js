@@ -168,7 +168,7 @@ declare namespace WAWebJS {
         /** Emitted when the client has been disconnected */
         on(event: 'disconnected', listener: (
             /** reason that caused the disconnect */
-            reason: WAState | "NAVIGATED"
+            reason: WAState | "NAVIGATED" | "QR failed"
         ) => void): this
 
         /** Emitted when browser has been disconnected */
