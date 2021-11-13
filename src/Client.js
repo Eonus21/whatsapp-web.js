@@ -407,7 +407,9 @@ class Client extends EventEmitter {
 
                 if (state === WAState.CONFLICT) {
                     setTimeout(() => {
-                        this.pupPage.evaluate(() => window.Store.AppState.takeover());
+                        this.pupPage.evaluate(() => window.Store.AppState.takeover()).catch((e) => {
+                            console.log('WA conflict evaluate error ' + e?.message)
+                        });
                     }, this.options.takeoverTimeoutMs);
                 }
             }
