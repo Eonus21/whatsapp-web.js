@@ -21,12 +21,17 @@ class Message extends Base {
 
     _patch(data) {
         /**
+         * Raw message data
+         * @type {unknown}
+         */
+        this.data = data;
+        
+        /**
          * MediaKey that represents the sticker 'ID'
          * @type {string}
          */
         this.mediaKey = data.mediaKey;
-
-
+        
         /**
          * ID that represents the message
          * @type {object}
@@ -51,7 +56,7 @@ class Message extends Base {
          */
         this.body = this.hasMedia ? data.caption || '' : data.body || '';
 
-        /** 
+        /**
          * Message type
          * @type {MessageTypes}
          */
@@ -71,9 +76,9 @@ class Message extends Base {
 
         /**
          * ID for who this message is for.
-         * 
+         *
          * If the message is sent by the current user, it will be the Chat to which the message is being sent.
-         * If the message is sent by another user, it will be the ID for the current user. 
+         * If the message is sent by another user, it will be the ID for the current user.
          * @type {string}
          */
         this.to = (typeof (data.to) === 'object' && data.to !== null) ? data.to._serialized : data.to;
@@ -88,8 +93,8 @@ class Message extends Base {
          * String that represents from which device type the message was sent
          * @type {string}
          */
-        this.deviceType = data.id.id.length > 21 ? 'android' : data.id.id.substring(0,2) =='3A' ? 'ios' : 'web';
-        
+        this.deviceType = data.id.id.length > 21 ? 'android' : data.id.id.substring(0, 2) == '3A' ? 'ios' : 'web';
+
         /**
          * Indicates if the message was forwarded
          * @type {boolean}
@@ -115,14 +120,14 @@ class Message extends Base {
          * @type {boolean}
          */
         this.isStarred = data.star;
-        
+
         /**
          * Indicates if the message was a broadcast
          * @type {boolean}
          */
         this.broadcast = data.broadcast;
 
-        /** 
+        /**
          * Indicates if the message was sent by the current user
          * @type {boolean}
          */
@@ -158,7 +163,7 @@ class Message extends Base {
             fromId: data.from._serialized,
             toId: data.to._serialized
         } : undefined;
-         
+
         /**
          * Indicates the mentions in the message body.
          * @type {Array<string>}
@@ -209,7 +214,7 @@ class Message extends Base {
         /**
          * Links included in the message.
          * @type {Array<{link: string, isSuspicious: boolean}>}
-         * 
+         *
          */
         this.links = data.links;
 
@@ -217,7 +222,7 @@ class Message extends Base {
         if (data.dynamicReplyButtons) {
             this.dynamicReplyButtons = data.dynamicReplyButtons;
         }
-        
+
         /** Selected Button Id **/
         if (data.selectedButtonId) {
             this.selectedButtonId = data.selectedButtonId;
@@ -227,7 +232,7 @@ class Message extends Base {
         if (data.listResponse && data.listResponse.singleSelectReply.selectedRowId) {
             this.selectedRowId = data.listResponse.singleSelectReply.selectedRowId;
         }
-        
+
         return super._patch(data);
     }
 
@@ -235,6 +240,14 @@ class Message extends Base {
         return this.fromMe ? this.to : this.from;
     }
 
+    /**
+     * Returns message in a raw format
+     * @returns {Object}
+     */
+    raw() {
+        return this.data;
+    }
+    
     /**
      * Returns the Chat this message was sent in
      * @returns {Promise<Chat>}
@@ -275,12 +288,12 @@ class Message extends Base {
     }
 
     /**
-     * Sends a message as a reply to this message. If chatId is specified, it will be sent 
-     * through the specified Chat. If not, it will send the message 
+     * Sends a message as a reply to this message. If chatId is specified, it will be sent
+     * through the specified Chat. If not, it will send the message
      * in the same Chat as the original message was sent.
-     * 
-     * @param {string|MessageMedia|Location} content 
-     * @param {string} [chatId] 
+     *
+     * @param {string|MessageMedia|Location} content
+     * @param {string} [chatId]
      * @param {MessageSendOptions} [options]
      * @returns {Promise<Message>}
      */
@@ -304,10 +317,10 @@ class Message extends Base {
     async acceptGroupV4Invite() {
         return await this.client.acceptGroupV4Invite(this.inviteV4);
     }
-    
+
     /**
      * Forwards this message to another chat
-     * 
+     *
      * @param {string|Chat} chat Chat model or chat ID to which the message will be forwarded
      * @returns {Promise}
      */
@@ -337,7 +350,7 @@ class Message extends Base {
             if (msg.mediaData.mediaStage != 'RESOLVED') {
                 // try to resolve media
                 await msg.downloadMedia({
-                    downloadEvenIfExpensive: true, 
+                    downloadEvenIfExpensive: true,
                     rmrReason: 1
                 });
             }
@@ -357,9 +370,9 @@ class Message extends Base {
                     type: msg.type,
                     signal: (new AbortController).signal
                 });
-    
+
                 const data = window.WWebJS.arrayBufferToBase64(decryptedMedia);
-    
+
                 return {
                     data,
                     mimetype: msg.mimetype,
@@ -435,12 +448,12 @@ class Message extends Base {
     async getInfo() {
         const info = await this.client.pupPage.evaluate(async (msgId) => {
             const msg = window.Store.Msg.get(msgId);
-            if(!msg) return null;
-            
+            if (!msg) return null;
+
             return await window.Store.Wap.queryMsgInfo(msg.id);
         }, this.id._serialized);
 
-        if(info.status) {
+        if (info.status) {
             return null;
         }
 

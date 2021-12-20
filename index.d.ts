@@ -152,12 +152,12 @@ declare namespace WAWebJS {
 
         /** Emitted when authentication is successful */
         on(event: 'authenticated', listener: (
-            /** Object containing session information. Can be used to restore the session */
-            session: ClientSession
+            /** 
+             * Object containing session information. Can be used to restore the session
+             * @deprecated
+             */
+            session?: ClientSession
         ) => void): this
-
-        /** Emitted when the battery percentage for the attached device changes */
-        on(event: 'change_battery', listener: (batteryInfo: BatteryInfo) => void): this
 
         /** Emitted when the connection state changes */
         on(event: 'change_state', listener: (
@@ -257,22 +257,12 @@ declare namespace WAWebJS {
 
     /** Current connection information */
     export interface ClientInfo {
-        /** 
-         * Current user ID 
-         * @deprecated Use .wid instead 
-         */
-        me: ContactId
         /** Current user ID */
         wid: ContactId
-        /** Information about the phone this client is connected to */
-        phone: ClientInfoPhone
         /** Platform the phone is running on */
         platform: string
         /** Name configured to be shown in push notifications */
         pushname: string
-
-        /** Get current battery percentage and charging status for the attached device */
-        getBatteryStatus: () => Promise<BatteryInfo>
     }
 
     /** Information about the phone this client is connected to */
@@ -308,8 +298,19 @@ declare namespace WAWebJS {
         /** Restart client with a new session (i.e. use null 'session' var) if authentication fails
          * @default false */
         restartOnAuthFail?: boolean
-        /** Whatsapp session to restore. If not set, will start a new session */
+        /**
+         * Enable authentication via a `session` option.
+         * @deprecated Will be removed in a future release
+         */
+        useDeprecatedSessionAuth?: boolean
+        /** 
+         * WhatsApp session to restore. If not set, will start a new session
+         * @deprecated Set `useDeprecatedSessionAuth: true` to enable. This auth method is not supported by MultiDevice and will be removed in a future release. 
+         */
         session?: ClientSession
+        /** Client id to distinguish instances if you are using multiple, otherwise keep empty if you are using only one instance
+         * @default '' */
+        clientId: string
         /** If another whatsapp web session is detected (another browser), take over the session in the current browser
          * @default false */
         takeoverOnConflict?: boolean,
@@ -324,21 +325,20 @@ declare namespace WAWebJS {
         ffmpegPath?: string
 
         uuid?: string
+        /** Remove message history thus saving you a lot of storage space.
+         @default false */
+        disableMessageHistory?: boolean
     }
 
-    /** Represents a Whatsapp client session */
+    /** 
+     * Represents a WhatsApp client session
+     * @deprecated
+     */
     export interface ClientSession {
         WABrowserId: string,
         WASecretBundle: string,
         WAToken1: string,
         WAToken2: string,
-    }
-
-    export interface BatteryInfo {
-        /** The current battery percentage */
-        battery: number,
-        /** Indicates if the phone is plugged in (true) or not (false) */
-        plugged: boolean,
     }
 
     export interface CreateGroupResult {
@@ -617,6 +617,10 @@ declare namespace WAWebJS {
          * If not, it will send the message in the same Chat as the original message was sent. 
          */
         reply: (content: MessageContent, chatId?: string, options?: MessageSendOptions) => Promise<Message>,
+         /**
+          * Returns message in a raw format
+          */
+        raw: () => unknown,
         /** 
          * Forwards this message to another chat
          */
@@ -734,7 +738,7 @@ declare namespace WAWebJS {
         static fromUrl: (url: string, options?: MediaFromURLOptions) => Promise<MessageMedia>
     }
 
-    export type MessageContent = string | MessageMedia | Location | Contact | Contact[] | List | Buttons
+    export type MessageContent = string | MessageMedia | Location | Contact | Contact[] | List | Buttons 
 
     /**
      * Represents a Contact on WhatsApp
