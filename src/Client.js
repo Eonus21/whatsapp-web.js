@@ -453,7 +453,7 @@ class Client extends EventEmitter {
          * Emitted when the client has initialized and is ready to receive messages.
          * @event Client#ready
          */
-        this.emit(Events.READY, loggedAndTimeouted);
+        this.emit(Events.READY);
 
         // Disconnect when navigating away
         // Because WhatsApp Web now reloads when logging out from the device, this also covers that case
