@@ -5,7 +5,7 @@ exports.ExposeStore = (moduleRaidStr) => {
     eval('var moduleRaid = ' + moduleRaidStr);
     // eslint-disable-next-line no-undef
     window.mR = moduleRaid();
-    window.Store = Object.assign({}, window.mR.findModule('Chat')[0].default);
+    window.Store = Object.assign({}, window.mR.findModule('Chat').find(a => typeof a.default != 'undefined').default);
     window.Store.AppState = window.mR.findModule('STREAM')[0].Socket;
     window.Store.Conn = window.mR.findModule('Conn').find(a => typeof a.Conn != 'undefined').Conn;
     window.Store.BlockContact = window.mR.findModule('blockContact')[0];
@@ -32,7 +32,7 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.SendDelete = window.mR.findModule('sendDelete')[0];
     window.Store.SendMessage = window.mR.findModule('addAndSendMsgToChat')[0];
     window.Store.SendSeen = window.mR.findModule('sendSeen')[0];
-    window.Store.Sticker = window.mR.findModule('Sticker')[0].default.Sticker;
+    window.Store.Sticker = window.mR.findModule('Sticker')[0].Sticker;
     window.Store.User = window.mR.findModule('getMaybeMeUser')[0];
     window.Store.UploadUtils = window.mR.findModule((module) => (module.default && module.default.encryptAndUpload) ? module.default : null)[0].default;
     window.Store.USyncQuery = window.mR.findModule('USyncQuery')[0].USyncQuery;
@@ -46,6 +46,8 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.PresenceUtils = window.mR.findModule('sendPresenceAvailable')[0];
     window.Store.ChatState = window.mR.findModule('sendChatStateComposing')[0];
     window.Store.GroupParticipants = window.mR.findModule('sendPromoteParticipants')[0];
+    window.Store.JoinInviteV4 = window.mR.findModule('sendJoinGroupViaInviteV4')[0];
+    window.Store.findCommonGroups = window.mR.findModule('findCommonGroups')[0].findCommonGroups;
     window.Store.StickerTools = {
         ...window.mR.findModule('toWebpSticker')[0],
         ...window.mR.findModule('addWebpMetadata')[0]

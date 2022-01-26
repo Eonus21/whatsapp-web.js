@@ -113,16 +113,24 @@ class Client extends EventEmitter {
         this.pupBrowser = browser;
         this.pupPage = page;
 
+
         if (this.options.useDeprecatedSessionAuth && this.options.session) {
-            await page.evaluateOnNewDocument(
-                session => {
-                    localStorage.clear();
-                    localStorage.setItem('WABrowserId', session.WABrowserId);
-                    localStorage.setItem('WASecretBundle', session.WASecretBundle);
-                    localStorage.setItem('WAToken1', session.WAToken1);
-                    localStorage.setItem('WAToken2', session.WAToken2);
-                }, this.options.session);
-        } 
+            // remember me
+            await page.evaluateOnNewDocument(() => {
+                localStorage.setItem('remember-me', 'true');
+            });
+
+            if (this.options.session) {
+                await page.evaluateOnNewDocument(
+                    session => {
+                        localStorage.clear();
+                        localStorage.setItem('WABrowserId', session.WABrowserId);
+                        localStorage.setItem('WASecretBundle', session.WASecretBundle);
+                        localStorage.setItem('WAToken1', session.WAToken1);
+                        localStorage.setItem('WAToken2', session.WAToken2);
+                    }, this.options.session);
+            } 
+        }
 
         page.on('close', () => {
             this.emit(Events.PAGE_CLOSED);
@@ -207,7 +215,6 @@ class Client extends EventEmitter {
         } 
 
         await page.evaluate(ExposeStore, moduleRaid.toString());
-
         let authEventPayload = undefined;
         if(this.options.useDeprecatedSessionAuth) {
             // Get session tokens
@@ -711,15 +718,15 @@ class Client extends EventEmitter {
 
     /**
      * Accepts a private invitation to join a group
-     * @param {object} inviteV4 Invite V4 Info
+     * @param {object} inviteInfo Invite V4 Info
      * @returns {Promise<Object>}
      */
     async acceptGroupV4Invite(inviteInfo) {
         if(!inviteInfo.inviteCode) throw 'Invalid invite code, try passing the message.inviteV4 object';
         if (inviteInfo.inviteCodeExp == 0) throw 'Expired invite code';
-        return await this.pupPage.evaluate(async inviteInfo => {
-            let { groupId, fromId, inviteCode, inviteCodeExp, toId } = inviteInfo;
-            return await window.Store.Wap.acceptGroupV4Invite(groupId, fromId, inviteCode, String(inviteCodeExp), toId);
+        return this.pupPage.evaluate(async inviteInfo => {
+            let { groupId, fromId, inviteCode, inviteCodeExp} = inviteInfo;
+            return await window.Store.JoinInviteV4.sendJoinGroupViaInviteV4(inviteCode, String(inviteCodeExp), groupId, fromId);
         }, inviteInfo);
     }
     
@@ -880,6 +887,30 @@ class Client extends EventEmitter {
         }, contactId);
 
         return profilePic ? profilePic.eurl : undefined;
+    }
+
+    /**
+     * Gets the Contact's common groups with you. Returns empty array if you don't have any common group.
+     * @param {string} contactId the whatsapp user's ID (_serialized format)
+     * @returns {Promise<WAWebJS.ChatId[]>}
+     */
+    async getCommonGroups(contactId) {
+        const commonGroups = await this.client.pupPage.evaluate(async (contactId) => {
+            const contact = window.Store.Contact.get(contactId);
+            if(contact.commonGroups){
+                return contact.commonGroups.serialize();
+            }
+            const status = await window.Store.findCommonGroups(contact);
+            if (status){
+                return contact.commonGroups.serialize();
+            }
+            return [];
+        }, contactId);
+        const chats = [];
+        for (const group of commonGroups) {
+            chats.push(group.id);
+        }
+        return chats;
     }
 
     /**
