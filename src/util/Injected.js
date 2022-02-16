@@ -5,7 +5,7 @@ exports.ExposeStore = (moduleRaidStr) => {
     eval('var moduleRaid = ' + moduleRaidStr);
     // eslint-disable-next-line no-undef
     window.mR = moduleRaid();
-    window.Store = Object.assign({}, window.mR.findModule('Chat')[0].default);
+    window.Store = Object.assign({}, window.mR.findModule(m => m.default && m.default.Chat)[0].default);
     window.Store.AppState = window.mR.findModule('STREAM')[0].Socket;
     window.Store.Conn = window.mR.findModule('Conn').find(a => typeof a.Conn != 'undefined').Conn;
     window.Store.BlockContact = window.mR.findModule('blockContact')[0];
@@ -32,7 +32,7 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.SendDelete = window.mR.findModule('sendDelete')[0];
     window.Store.SendMessage = window.mR.findModule('addAndSendMsgToChat')[0];
     window.Store.SendSeen = window.mR.findModule('sendSeen')[0];
-    window.Store.Sticker = window.mR.findModule('Sticker')[0].default.Sticker;
+    window.Store.Sticker = window.mR.findModule('Sticker')[0].Sticker;
     window.Store.User = window.mR.findModule('getMaybeMeUser')[0];
     window.Store.UploadUtils = window.mR.findModule((module) => (module.default && module.default.encryptAndUpload) ? module.default : null)[0].default;
     window.Store.USyncQuery = window.mR.findModule('USyncQuery')[0].USyncQuery;
@@ -46,11 +46,13 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.PresenceUtils = window.mR.findModule('sendPresenceAvailable')[0];
     window.Store.ChatState = window.mR.findModule('sendChatStateComposing')[0];
     window.Store.GroupParticipants = window.mR.findModule('sendPromoteParticipants')[0];
+    window.Store.JoinInviteV4 = window.mR.findModule('sendJoinGroupViaInviteV4')[0];
+    window.Store.findCommonGroups = window.mR.findModule('findCommonGroups')[0].findCommonGroups;
     window.Store.StickerTools = {
         ...window.mR.findModule('toWebpSticker')[0],
         ...window.mR.findModule('addWebpMetadata')[0]
     };
-
+  
     window.Store.GroupUtils = {
         ...window.mR.findModule('sendCreateGroup')[0],
         ...window.mR.findModule('sendSetGroupSubject')[0]
@@ -72,11 +74,12 @@ exports.LoadUtils = () => {
     window.WWebJS.getNumberId = async (id) => {
 
         if (window.Store.Features.features.MD_BACKEND) {
+            id = window.Store.WidFactory.createWid(id);
             let handler = (new window.Store.USyncQuery).withContactProtocol();
-            handler = handler.withUser((new window.Store.USyncUser).withPhone(id), handler.withBusinessProtocol(), 1);
+            handler = handler.withUser((new window.Store.USyncUser).withId(id), handler.withDeviceProtocol(), 1);
             let result = await handler.execute();
-            if (result.list[0].contact.type == 'in') {
-                return result.list[0].id;
+            if (result.list[0].devices.deviceList.length > 0) {
+                return id;
             }
             throw 'The number provided is not a registered whatsapp user';
         } else {
@@ -181,9 +184,9 @@ exports.LoadUtils = () => {
                 options = { ...options, ...preview };
             }
         }
-
-        let extraOptions = {};
-        if (options.buttons) {
+        
+        let buttonOptions = {};
+        if(options.buttons){
             let caption;
             if (options.buttons.type === 'chat') {
                 content = options.buttons.body;
@@ -191,7 +194,7 @@ exports.LoadUtils = () => {
             } else {
                 caption = options.caption ? options.caption : ' '; //Caption can't be empty
             }
-            extraOptions = {
+            buttonOptions = {
                 productHeaderImageRejected: false,
                 isFromTemplate: false,
                 isDynamicReplyButtonsMsg: true,
@@ -204,12 +207,12 @@ exports.LoadUtils = () => {
             delete options.buttons;
         }
 
-        if (options.list) {
-            if (window.Store.Conn.platform === 'smba' || window.Store.Conn.platform === 'smbi') {
+        let listOptions = {};
+        if(options.list){
+            if(window.Store.Conn.platform === 'smba' || window.Store.Conn.platform === 'smbi'){
                 throw '[LT01] Whatsapp business can\'t send this yet';
             }
-            extraOptions = {
-                ...extraOptions,
+            listOptions = {
                 type: 'list',
                 footer: options.list.footer,
                 list: {
@@ -219,7 +222,7 @@ exports.LoadUtils = () => {
                 body: options.list.description
             };
             delete options.list;
-            delete extraOptions.list.footer;
+            delete listOptions.list.footer;
         }
 
         const newMsgId = new window.Store.MsgKey({
@@ -227,6 +230,15 @@ exports.LoadUtils = () => {
             remote: chat.id,
             id: window.Store.genId(),
         });
+
+        const extraOptions = options.extraOptions || {};
+        delete options.extraOptions;
+
+        const ephemeralSettings = {
+            ephemeralDuration: chat.isEphemeralSettingOn() ? chat.getEphemeralSetting() : undefined,
+            ephemeralSettingTimestamp: chat.getEphemeralSettingTimestamp() || undefined,
+            disappearingModeInitiator: chat.getDisappearingModeInitiator() || undefined,
+        };
 
         const message = {
             ...options,
@@ -240,10 +252,13 @@ exports.LoadUtils = () => {
             t: parseInt(new Date().getTime() / 1000),
             isNewMsg: true,
             type: 'chat',
+            ...ephemeralSettings,
             ...locationOptions,
             ...attOptions,
             ...quotedMsgOptions,
             ...vcardOptions,
+            ...buttonOptions,
+            ...listOptions,
             ...extraOptions
         };
 
@@ -374,6 +389,7 @@ exports.LoadUtils = () => {
     window.WWebJS.getMessageModel = message => {
         const msg = message.serialize();
 
+        msg.isEphemeral = message.isEphemeral;
         msg.isStatusV3 = message.isStatusV3;
         msg.links = (message.getLinks()).map(link => ({
             link: link.href,

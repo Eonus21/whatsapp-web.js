@@ -86,6 +86,9 @@ declare namespace WAWebJS {
         /** Returns the contact ID's profile picture URL, if privacy settings allow it */
         getProfilePicUrl(contactId: string): Promise<string>
 
+        /** Gets the Contact's common groups with you. Returns empty array if you don't have any common group. */
+        getCommonGroups(contactId: string): Promise<ChatId[]>
+
         /** Gets the current connection state for the client */
         getState(): Promise<WAState>
 
@@ -328,6 +331,9 @@ declare namespace WAWebJS {
         /** Remove message history thus saving you a lot of storage space.
          @default false */
         disableMessageHistory?: boolean
+        /** Path to place session objects in
+         @default './WWebJS'   */
+        dataPath?: string
     }
 
     /** 
@@ -453,6 +459,25 @@ declare namespace WAWebJS {
         PAYMENT = 'payment',
         UNKNOWN = 'unknown',
         GROUP_INVITE = 'groups_v4_invite',
+        LIST = 'list',
+        LIST_RESPONSE = 'list_response',
+        BUTTONS_RESPONSE = 'buttons_response',
+        BROADCAST_NOTIFICATION = 'broadcast_notification',
+        CALL_LOG = 'call_log',
+        CIPHERTEXT = 'ciphertext',
+        DEBUG = 'debug',
+        E2E_NOTIFICATION = 'e2e_notification',
+        GP2 = 'gp2',
+        GROUP_NOTIFICATION = 'group_notification',
+        HSM = 'hsm',
+        INTERACTIVE = 'interactive',
+        NATIVE_FLOW = 'native_flow',
+        NOTIFICATION = 'notification',
+        NOTIFICATION_TEMPLATE = 'notification_template',
+        OVERSIZED = 'oversized',
+        PROTOCOL = 'protocol',
+        REACTION = 'reaction',
+        TEMPLATE_BUTTON_REPLY = 'template_button_reply',
     }
 
     /** Client status */
@@ -537,6 +562,8 @@ declare namespace WAWebJS {
         isStatus: boolean,
         /** Indicates if the message is a Gif */
         isGif: boolean,
+        /** Indicates if the message will disappear after it expires */
+        isEphemeral: boolean,
         /** ID for the Chat that this message was sent to, except if the message was sent by the current user */
         from: string,
         /** Indicates if the message was sent by the current user */
@@ -711,6 +738,7 @@ declare namespace WAWebJS {
 
     export interface MediaFromURLOptions {
         client?: Client
+        filename?: string
         unsafeMime?: boolean
         reqOptions?: RequestInit
     }
@@ -831,6 +859,9 @@ declare namespace WAWebJS {
 
         /** Gets the Contact's current "about" info. Returns null if you don't have permission to read their status.  */
         getAbout: () => Promise<string | null>,
+        
+        /** Gets the Contact's common groups with you. Returns empty array if you don't have any common group. */
+        getCommonGroups: (contactId: string) => Promise<ChatId[]>
 
     }
 
@@ -928,10 +959,9 @@ declare namespace WAWebJS {
 
     export interface MessageSearchOptions {
         /**
-         * The amount of messages to return.
+         * The amount of messages to return. If no limit is specified, the available messages will be returned.
          * Note that the actual number of returned messages may be smaller if there aren't enough messages in the conversation. 
          * Set this to Infinity to load all messages.
-         * @default 50
          */
         limit?: number
     }
@@ -1210,11 +1240,11 @@ declare namespace WAWebJS {
     /** Message type buttons */
     export class Buttons {
         body: string | MessageMedia
-        buttons: Array<Array<string>>
+        buttons: Array<{ buttonId: string; buttonText: {displayText: string}; type: number }>
         title?: string | null
         footer?: string | null
         
-        constructor(body: string, buttons: Array<Array<string>>, title?: string | null, footer?: string | null)
+        constructor(body: string, buttons: Array<{ id?: string; body: string }>, title?: string | null, footer?: string | null)
     }
 }
 
