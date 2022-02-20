@@ -246,6 +246,19 @@ class Message extends Base {
         return this.fromMe ? this.to : this.from;
     }
 
+    async reload() {
+        const newData = await this.client.pupPage.evaluate((msgId) => {
+            const msg = window.Store.Msg.get(msgId);
+            if(!msg) return null;
+            return window.WWebJS.getMessageModel(msg);
+        }, this.id._serialized);
+
+        if(!newData) return null;
+        
+        this._patch(newData);
+        return this;
+    }
+
     /**
      * Returns message in a raw format
      * @returns {Object}
@@ -403,7 +416,7 @@ class Message extends Base {
             let msg = window.Store.Msg.get(msgId);
 
             if (everyone && msg.id.fromMe && msg._canRevoke()) {
-                return window.Store.Cmd.sendRevokeMsgs(msg.chat, [msg], true);
+                return window.Store.Cmd.sendRevokeMsgs(msg.chat, [msg], {type: 'Sender'});
             }
 
             return window.Store.Cmd.sendDeleteMsgs(msg.chat, [msg], true);
@@ -456,12 +469,8 @@ class Message extends Base {
             const msg = window.Store.Msg.get(msgId);
             if (!msg) return null;
 
-            return await window.Store.Wap.queryMsgInfo(msg.id);
+            return await window.Store.MessageInfo.sendQueryMsgInfo(msg.id);
         }, this.id._serialized);
-
-        if (info.status) {
-            return null;
-        }
 
         return info;
     }

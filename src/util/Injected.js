@@ -7,23 +7,24 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.mR = moduleRaid();
     window.Store = Object.assign({}, window.mR.findModule(m => m.default && m.default.Chat)[0].default);
     window.Store.AppState = window.mR.findModule('STREAM')[0].Socket;
-    window.Store.Conn = window.mR.findModule('Conn').find(a => typeof a.Conn != 'undefined').Conn;
+    window.Store.Conn = window.mR.findModule('Conn')[0].Conn;
     window.Store.BlockContact = window.mR.findModule('blockContact')[0];
     window.Store.Call = window.mR.findModule('CallCollection')[0].CallCollection;
     window.Store.Cmd = window.mR.findModule('Cmd')[0].Cmd;
     window.Store.CryptoLib = window.mR.findModule('decryptE2EMedia')[0];
     window.Store.DownloadManager = window.mR.findModule('downloadManager')[0].downloadManager;
     window.Store.Features = window.mR.findModule('FEATURE_CHANGE_EVENT')[0].GK;
-    window.Store.genId = window.mR.findModule('randomId')[0].randomId;
+    window.Store.genId = window.mR.findModule('newTag')[0].newTag;
     window.Store.GroupMetadata = window.mR.findModule((module) => module.default && module.default.handlePendingInvite)[0].default;
     window.Store.Invite = window.mR.findModule('sendJoinGroupViaInvite')[0];
-    window.Store.Label = window.mR.findModule('LabelCollection')[0].default;
+    window.Store.Label = window.mR.findModule('LabelCollection')[0].LabelCollection;
     window.Store.MediaPrep = window.mR.findModule('MediaPrep')[0];
     window.Store.MediaObject = window.mR.findModule('getOrCreateMediaObject')[0];
     window.Store.NumberInfo = window.mR.findModule('formattedPhoneNumber')[0];
     window.Store.MediaTypes = window.mR.findModule('msgToMediaType')[0];
     window.Store.MediaUpload = window.mR.findModule('uploadMedia')[0];
     window.Store.MsgKey = window.mR.findModule((module) => module.default && module.default.fromString)[0].default;
+    window.Store.MessageInfo = window.mR.findModule('sendQueryMsgInfo')[0];
     window.Store.OpaqueData = window.mR.findModule(module => module.default && module.default.createFromData)[0].default;
     window.Store.QueryExist = window.mR.findModule('queryExist')[0].queryExist;
     window.Store.QueryProduct = window.mR.findModule('queryProduct')[0];
@@ -48,6 +49,7 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.GroupParticipants = window.mR.findModule('sendPromoteParticipants')[0];
     window.Store.JoinInviteV4 = window.mR.findModule('sendJoinGroupViaInviteV4')[0];
     window.Store.findCommonGroups = window.mR.findModule('findCommonGroups')[0].findCommonGroups;
+    window.Store.StatusUtils = window.mR.findModule('setMyStatus')[0];
     window.Store.StickerTools = {
         ...window.mR.findModule('toWebpSticker')[0],
         ...window.mR.findModule('addWebpMetadata')[0]
@@ -55,7 +57,8 @@ exports.ExposeStore = (moduleRaidStr) => {
   
     window.Store.GroupUtils = {
         ...window.mR.findModule('sendCreateGroup')[0],
-        ...window.mR.findModule('sendSetGroupSubject')[0]
+        ...window.mR.findModule('sendSetGroupSubject')[0],
+        ...window.mR.findModule('markExited')[0]
     };
 
     if (!window.Store.Chat._find) {
@@ -225,10 +228,15 @@ exports.LoadUtils = () => {
             delete listOptions.list.footer;
         }
 
+        const meUser = window.Store.User.getMaybeMeUser();
+        const isMD = window.Store.Features.features.MD_BACKEND;
+
         const newMsgId = new window.Store.MsgKey({
-            fromMe: true,
-            remote: chat.id,
+            from: meUser,
+            to: chat.id,
             id: window.Store.genId(),
+            participant: isMD && chat.id.isGroup() ? meUser : undefined,
+            selfDir: 'out',
         });
 
         const extraOptions = options.extraOptions || {};
@@ -245,7 +253,7 @@ exports.LoadUtils = () => {
             id: newMsgId,
             ack: 0,
             body: content,
-            from: window.Store.User.getMeUser(),
+            from: meUser,
             to: chat.id,
             local: true,
             self: 'out',

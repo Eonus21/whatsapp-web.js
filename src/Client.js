@@ -115,22 +115,17 @@ class Client extends EventEmitter {
         this.pupPage = page;
 
         if (this.options.useDeprecatedSessionAuth && this.options.session) {
-            // remember me
-            await page.evaluateOnNewDocument(() => {
-                localStorage.setItem('remember-me', 'true');
-            });
+            await page.evaluateOnNewDocument(session => {
+                if (document.referrer === 'https://whatsapp.com/') {
+                    localStorage.clear();
+                    localStorage.setItem('WABrowserId', session.WABrowserId);
+                    localStorage.setItem('WASecretBundle', session.WASecretBundle);
+                    localStorage.setItem('WAToken1', session.WAToken1);
+                    localStorage.setItem('WAToken2', session.WAToken2);
+                }
 
-            if (this.options.session) {
-                await page.evaluateOnNewDocument(session => {
-                      if (document.referrer === 'https://whatsapp.com/') {
-                          localStorage.clear();
-                          localStorage.setItem('WABrowserId', session.WABrowserId);
-                          localStorage.setItem('WASecretBundle', session.WASecretBundle);
-                          localStorage.setItem('WAToken1', session.WAToken1);
-                          localStorage.setItem('WAToken2', session.WAToken2);
-                      }
-                }, this.options.session);
-            }
+                localStorage.setItem('remember-me', 'true');
+            }, this.options.session);
         }
 
         page.on('close', () => {
@@ -164,11 +159,28 @@ class Client extends EventEmitter {
             })
         ]);
 
-        // Checks if an error ocurred on the first found selector. The second will be discarted and ignored by .race;
+        // Checks if an error ocurred on the first found selector. The second will be discarded and ignored by .race;
         if (needAuthentication instanceof Error) throw needAuthentication;
 
         // Scan-qrcode selector was found. Needs authentication
         if (needAuthentication) {
+            if(this.options.session) {
+                /**
+                 * Emitted when there has been an error while trying to restore an existing session
+                 * @event Client#auth_failure
+                 * @param {string} message
+                 * @deprecated
+                 */
+                this.emit(Events.AUTHENTICATION_FAILURE, 'Unable to log in. Are the session details valid?');
+                await this.destroy();
+                if (this.options.restartOnAuthFail) {
+                    // session restore failed so try again but without session to force new authentication
+                    this.options.session = null;
+                    return this.initialize();
+                }
+                return;
+            }
+
             const QR_CONTAINER = 'div[data-ref]';
             const QR_RETRY_BUTTON = 'div[data-ref] > span > button';
             let qrRetries = 0;
@@ -213,7 +225,7 @@ class Client extends EventEmitter {
 
             // Wait for code scan
             try {
-               await page.waitForSelector(INTRO_IMG_SELECTOR, { timeout: 0 });
+                await page.waitForSelector(INTRO_IMG_SELECTOR, { timeout: 0 });
                 clearInterval(this._qrRefreshInterval);
                 this._qrRefreshInterval = undefined;
             } catch(error) {
@@ -442,6 +454,22 @@ class Client extends EventEmitter {
             }
         });
 
+        await page.exposeFunction('onBatteryStateChangedEvent', (state) => {
+            const { battery, plugged } = state;
+
+            if (battery === undefined) return;
+
+            /**
+             * Emitted when the battery percentage for the attached device changes. Will not be sent if using multi-device.
+             * @event Client#change_battery
+             * @param {object} batteryInfo
+             * @param {number} batteryInfo.battery - The current battery percentage
+             * @param {boolean} batteryInfo.plugged - Indicates if the phone is plugged in (true) or not (false)
+             * @deprecated
+             */
+            this.emit(Events.BATTERY_CHANGED, { battery, plugged });
+        });
+
         await page.exposeFunction('onIncomingCall', (call) => {
             /**
              * Emitted when a call is received
@@ -467,6 +495,7 @@ class Client extends EventEmitter {
             window.Store.Msg.on('change:isUnsentMedia', (msg, unsent) => { if (msg.id.fromMe && !unsent) window.onMessageMediaUploadedEvent(window.WWebJS.getMessageModel(msg)); });
             window.Store.Msg.on('remove', (msg) => { if (msg.isNewMsg) window.onRemoveMessageEvent(window.WWebJS.getMessageModel(msg)); });
             window.Store.AppState.on('change:state', (_AppState, state) => { window.onAppStateChangedEvent(state); });
+            window.Store.Conn.on('change:battery', (state) => { window.onBatteryStateChangedEvent(state); });
             window.Store.Call.on('add', (call) => { window.onIncomingCall(call); });
             window.Store.Msg.on('add', (msg) => { 
                 if (msg.isNewMsg) {
@@ -762,7 +791,7 @@ class Client extends EventEmitter {
      */
     async setStatus(status) {
         await this.pupPage.evaluate(async status => {
-            return await window.Store.Wap.sendSetStatus(status);
+            return await window.Store.StatusUtils.setMyStatus(status);
         }, status);
     }
 
