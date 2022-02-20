@@ -14,6 +14,7 @@ const { ExposeStore, LoadUtils } = require('./util/Injected');
 const ChatFactory = require('./factories/ChatFactory');
 const ContactFactory = require('./factories/ContactFactory');
 const { ClientInfo, Message, MessageMedia, Contact, Location, GroupNotification, Label, Call, Buttons, List } = require('./structures');
+const useProxy = require('puppeteer-page-proxy');
 /**
  * Starting point for interacting with the WhatsApp Web API
  * @extends {EventEmitter}
@@ -108,9 +109,14 @@ class Client extends EventEmitter {
       
         await page.setUserAgent(this.options.userAgent);
 
-        if (credentials)
+        // proxy apply
+        if (this.options.proxyString) {
+            // new version
+            await useProxy(page, this.options.proxyString)
+        } else if (credentials) {
+            // old version
             await page.authenticate(credentials);
-
+        }
         this.pupBrowser = browser;
         this.pupPage = page;
 

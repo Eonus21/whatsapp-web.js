@@ -334,6 +334,10 @@ declare namespace WAWebJS {
         /** Path to place session objects in
          @default './WWebJS'   */
         dataPath?: string
+        /** Proxy string to use
+         * @example http://login:pass@host:port
+         @default undefined */   
+         proxyString?: string
     }
 
     /** 
