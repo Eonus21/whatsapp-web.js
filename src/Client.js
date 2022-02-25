@@ -80,7 +80,7 @@ class Client extends EventEmitter {
      * @param {string} credentials.username - Username
      * @param {string} credentials.password - Password
      */
-    async initialize() {
+    async initialize(credentials) {
         let [browser, page] = [null, null];
         
         if(this.options.puppeteer && this.options.puppeteer.browserWSEndpoint) {
