@@ -139,7 +139,7 @@ declare namespace WAWebJS {
          * Sets the current user's display name
          * @param displayName New display name
          */
-        setDisplayName(displayName: string): Promise<void>
+        setDisplayName(displayName: string): Promise<boolean>
 
         /** Changes and returns the archive state of the Chat */
         unarchiveChat(chatId: string): Promise<boolean>
@@ -161,6 +161,12 @@ declare namespace WAWebJS {
              */
             session?: ClientSession
         ) => void): this
+
+        /** 
+         * Emitted when the battery percentage for the attached device changes
+         * @deprecated 
+         */
+        on(event: 'change_battery', listener: (batteryInfo: BatteryInfo) => void): this
 
         /** Emitted when the connection state changes */
         on(event: 'change_state', listener: (
@@ -262,13 +268,24 @@ declare namespace WAWebJS {
     export interface ClientInfo {
         /** Current user ID */
         wid: ContactId
+        /** 
+         * Information about the phone this client is connected to.  Not available in multi-device. 
+         * @deprecated 
+         */
+        phone: ClientInfoPhone
         /** Platform the phone is running on */
         platform: string
         /** Name configured to be shown in push notifications */
         pushname: string
+
+        /** Get current battery percentage and charging status for the attached device */
+        getBatteryStatus: () => Promise<BatteryInfo>
     }
 
-    /** Information about the phone this client is connected to */
+    /** 
+     * Information about the phone this client is connected to 
+     * @deprecated
+     */
     export interface ClientInfoPhone {
         /** WhatsApp Version running on the phone */
         wa_version: string
@@ -349,6 +366,16 @@ declare namespace WAWebJS {
         WASecretBundle: string,
         WAToken1: string,
         WAToken2: string,
+    }
+
+    /** 
+     * @deprecated
+     */
+    export interface BatteryInfo {
+        /** The current battery percentage */
+        battery: number,
+        /** Indicates if the phone is plugged in (true) or not (false) */
+        plugged: boolean,
     }
 
     export interface CreateGroupResult {
@@ -628,6 +655,8 @@ declare namespace WAWebJS {
         selectedButtonId?: string,
         /** Selected list row ID */
         selectedRowId?: string,
+        /** Returns message in a raw format */
+        rawData: object,
         /** Accept the Group V4 Invite in message */
         acceptGroupV4Invite: () => Promise<{status: number}>,
         /** Deletes the message from the chat */
@@ -648,10 +677,6 @@ declare namespace WAWebJS {
          * If not, it will send the message in the same Chat as the original message was sent. 
          */
         reply: (content: MessageContent, chatId?: string, options?: MessageSendOptions) => Promise<Message>,
-         /**
-          * Returns message in a raw format
-          */
-        raw: () => unknown,
         /** 
          * Forwards this message to another chat
          */

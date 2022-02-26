@@ -6,7 +6,7 @@ exports.ExposeStore = (moduleRaidStr) => {
     // eslint-disable-next-line no-undef
     window.mR = moduleRaid();
     window.Store = Object.assign({}, window.mR.findModule(m => m.default && m.default.Chat)[0].default);
-    window.Store.AppState = window.mR.findModule('STREAM')[0].Socket;
+    window.Store.AppState = window.mR.findModule('Socket')[0].Socket;
     window.Store.Conn = window.mR.findModule('Conn')[0].Conn;
     window.Store.BlockContact = window.mR.findModule('blockContact')[0];
     window.Store.Call = window.mR.findModule('CallCollection')[0].CallCollection;
@@ -17,6 +17,7 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.genId = window.mR.findModule('newTag')[0].newTag;
     window.Store.GroupMetadata = window.mR.findModule((module) => module.default && module.default.handlePendingInvite)[0].default;
     window.Store.Invite = window.mR.findModule('sendJoinGroupViaInvite')[0];
+    window.Store.InviteInfo = window.mR.findModule('sendQueryGroupInvite')[0];
     window.Store.Label = window.mR.findModule('LabelCollection')[0].LabelCollection;
     window.Store.MediaPrep = window.mR.findModule('MediaPrep')[0];
     window.Store.MediaObject = window.mR.findModule('getOrCreateMediaObject')[0];
@@ -26,7 +27,7 @@ exports.ExposeStore = (moduleRaidStr) => {
     window.Store.MsgKey = window.mR.findModule((module) => module.default && module.default.fromString)[0].default;
     window.Store.MessageInfo = window.mR.findModule('sendQueryMsgInfo')[0];
     window.Store.OpaqueData = window.mR.findModule(module => module.default && module.default.createFromData)[0].default;
-    window.Store.QueryExist = window.mR.findModule('queryExist')[0].queryExist;
+    window.Store.QueryExist = window.mR.findModule(module => typeof module.default === 'function' && module.default.toString().includes('Should not reach queryExists MD'))[0].default;
     window.Store.QueryProduct = window.mR.findModule('queryProduct')[0];
     window.Store.QueryOrder = window.mR.findModule('queryOrder')[0];
     window.Store.SendClear = window.mR.findModule('sendClear')[0];
@@ -73,25 +74,6 @@ exports.ExposeStore = (moduleRaidStr) => {
 
 exports.LoadUtils = () => {
     window.WWebJS = {};
-
-    window.WWebJS.getNumberId = async (id) => {
-
-        if (window.Store.Features.features.MD_BACKEND) {
-            id = window.Store.WidFactory.createWid(id);
-            let handler = (new window.Store.USyncQuery).withContactProtocol();
-            handler = handler.withUser((new window.Store.USyncUser).withId(id), handler.withDeviceProtocol(), 1);
-            let result = await handler.execute();
-            if (result.list[0].devices.deviceList.length > 0) {
-                return id;
-            }
-            throw 'The number provided is not a registered whatsapp user';
-        } else {
-            let result = await window.Store.Wap.queryExist(id);
-            if (result.jid === undefined)
-                throw 'The number provided is not a registered whatsapp user';
-            return result.jid;
-        }
-    };
 
     window.WWebJS.sendSeen = async (chatId) => {
         let chat = window.Store.Chat.get(chatId);
@@ -274,31 +256,13 @@ exports.LoadUtils = () => {
         return window.Store.Msg.get(newMsgId._serialized);
     };
 
-    window.WWebJS.toStickerData = async ({ data, mimetype }, { name, author, categories }) => {
+    window.WWebJS.toStickerData = async (mediaInfo) => {
+        if (mediaInfo.mimetype == 'image/webp') return mediaInfo;
 
-        if (mimetype == 'image/webp') return {data, mimetype};
-
-
-        const binaryData = atob(data);
-
-        const buffer = new ArrayBuffer(binaryData.length);
-        const view = new Uint8Array(buffer);
-        for (let i = 0; i < binaryData.length; i++) {
-            view[i] = binaryData.charCodeAt(i);
-        }
-
-        const array = await (await window.Store.StickerTools.toWebpSticker(new Blob([buffer], { type: mimetype }))).arrayBuffer();
-
-        const webpBuffer = await window.Store.StickerTools.addWebpMetadata(array, {
-            emojis: categories || [],
-            stickerPackPublisher: author || 'WhatsApp Sticker Maker',
-            stickerPackName: name || ''
-        });
-
-
-        let TYPED_ARRAY = new Uint8Array(webpBuffer);
-        const STRING_CHAR = String.fromCharCode.apply(null, TYPED_ARRAY);
-        data = btoa(STRING_CHAR);
+        const file = window.WWebJS.mediaInfoToFile(mediaInfo);
+        const webpSticker = await window.Store.StickerTools.toWebpSticker(file);
+        const webpBuffer = await webpSticker.arrayBuffer();
+        const data = window.WWebJS.arrayBufferToBase64(webpBuffer);
 
         return {
             mimetype: 'image/webp',
@@ -496,7 +460,7 @@ exports.LoadUtils = () => {
     };
 
     window.WWebJS.mediaInfoToFile = ({ data, mimetype, filename }) => {
-        const binaryData = atob(data);
+        const binaryData = window.atob(data);
 
         const buffer = new ArrayBuffer(binaryData.length);
         const view = new Uint8Array(buffer);

@@ -32,7 +32,6 @@ const useProxy = require('puppeteer-page-proxy');
  * @param {string} options.ffmpegPath - Ffmpeg path to use when formating videos to webp while sending stickers 
  * @param {boolean} options.bypassCSP - Sets bypassing of page's Content-Security-Policy.
  * @param {string} options.clientId - Client id to distinguish instances if you are using multiple, otherwise keep null if you are using only one instance
- * @param {boolean} options.disableMessageHistory - Remove message history thus saving you a lot of storage space.
  * 
  * @fires Client#qr
  * @fires Client#authenticated
@@ -191,6 +190,11 @@ class Client extends EventEmitter {
             const QR_RETRY_BUTTON = 'div[data-ref] > span > button';
             let qrRetries = 0;
             await page.exposeFunction('qrChanged', async (qr) => {
+                /**
+                * Emitted when a QR code is received
+                * @event Client#qr
+                * @param {string} qr QR Code
+                */
                 this.emit(Events.QR_RECEIVED, qr);
                 if (this.options.qrMaxRetries > 0) {
                     qrRetries++;
@@ -232,8 +236,6 @@ class Client extends EventEmitter {
             // Wait for code scan
             try {
                 await page.waitForSelector(INTRO_IMG_SELECTOR, { timeout: 0 });
-                clearInterval(this._qrRefreshInterval);
-                this._qrRefreshInterval = undefined;
             } catch(error) {
                 if (
                     error.name === 'ProtocolError' && 
@@ -644,21 +646,13 @@ class Client extends EventEmitter {
         }
 
         if (internalOptions.sendMediaAsSticker && internalOptions.attachment) {
-            if (internalOptions.attachment.mimetype.startsWith('image')) {
-                internalOptions.attachment = await this.pupPage.evaluate(async (attachment, metadata) => {
-                    return await window.WWebJS.toStickerData(attachment, metadata);
-                }, internalOptions.attachment, {
+            internalOptions.attachment = await Util.formatToWebpSticker(
+                internalOptions.attachment, {
                     name: options.stickerName,
                     author: options.stickerAuthor,
                     categories: options.stickerCategories
-                });
-            } else {
-                internalOptions.attachment = await Util.formatToWebpSticker(internalOptions.attachment, {
-                    name: options.stickerName,
-                    author: options.stickerAuthor,
-                    categories: options.stickerCategories
-                });
-            }
+                }, this.pupPage
+            );
         }
 
         const newMessage = await this.pupPage.evaluate(async (chatId, message, options, sendSeen) => {
@@ -760,7 +754,7 @@ class Client extends EventEmitter {
      */
     async getInviteInfo(inviteCode) {
         return await this.pupPage.evaluate(inviteCode => {
-            return window.Store.Wap.groupInviteInfo(inviteCode);
+            return window.Store.InviteInfo.sendQueryGroupInvite(inviteCode);
         }, inviteCode);
     }
 
@@ -805,11 +799,22 @@ class Client extends EventEmitter {
      * Sets the current user's display name. 
      * This is the name shown to WhatsApp users that have not added you as a contact beside your number in groups and in your profile.
      * @param {string} displayName New display name
+     * @returns {Promise<Boolean>}
      */
     async setDisplayName(displayName) {
-        await this.pupPage.evaluate(async displayName => {
-            return await window.Store.Wap.setPushname(displayName);
+        const couldSet = await this.pupPage.evaluate(async displayName => {
+            if(!window.Store.Conn.canSetMyPushname()) return false;
+
+            if(window.Store.Features.features.MD_BACKEND) {
+                // TODO
+                return false;
+            } else {
+                const res = await window.Store.Wap.setPushname(displayName);
+                return !res.status || res.status === 200;
+            }
         }, displayName);
+
+        return couldSet;
     }
 
     /**
@@ -990,21 +995,7 @@ class Client extends EventEmitter {
      * @returns {Promise<Boolean>}
      */
     async isRegisteredUser(id) {
-        if (!id.endsWith('@c.us')) {
-            id += '@c.us';
-        }
-        return await this.pupPage.evaluate(async (id) => {
-            if (window.Store.Features.features.MD_BACKEND) {
-                id = window.Store.WidFactory.createWid(id);
-                let handler = (new window.Store.USyncQuery).withContactProtocol();
-                handler = handler.withUser((new window.Store.USyncUser).withId(id), handler.withDeviceProtocol(), 1);
-                let result = await handler.execute();
-                return result.list[0].devices.deviceList.length > 0;
-            } else {
-                let result = await window.Store.Wap.queryExist(id);
-                return result.jid !== undefined;
-            }
-        }, id);
+        return Boolean(await this.getNumberId(id));
     }
 
     /**
@@ -1017,13 +1008,12 @@ class Client extends EventEmitter {
         if (!number.endsWith('@c.us')) {
             number += '@c.us';
         }
-        try {
-            return await this.pupPage.evaluate(async numberId => {
-                return window.WWebJS.getNumberId(numberId);
-            }, number);
-        } catch (_) {
-            return null;
-        }
+
+        return await this.pupPage.evaluate(async number => {
+            const result = await window.Store.QueryExist(number);
+            if (!result || result.wid === undefined) return null;
+            return result.wid;
+        }, number);
     }
 
     /**
