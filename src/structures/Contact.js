@@ -183,22 +183,13 @@ class Contact extends Base {
      */
     async getAbout() {
         const about = await this.client.pupPage.evaluate(async (contactId) => {
-            const wid = window.Store.WidFactory.createWid(contactId);
-            return window.Store.StatusUtils.getStatus(wid);
+            return window.Store.Wap.statusFind(contactId);
         }, this.id._serialized);
 
         if (typeof about.status !== 'string')
             return null;
 
         return about.status;
-    }
-
-    /**
-     * Gets the Contact's common groups with you. Returns empty array if you don't have any common group.
-     * @returns {Promise<WAWebJS.ChatId[]>}
-     */
-    async getCommonGroups() {
-        return await this.client.getCommonGroups(this.id._serialized);
     }
     
 }

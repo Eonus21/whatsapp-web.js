@@ -18,12 +18,6 @@ class GroupChat extends Chat {
     _patch(data) {
         this.groupMetadata = data.groupMetadata;
 
-        /**
-         * Indicates if the Group Chat is read only, such as when the user is no longer a participant
-         * @type {boolean}
-         */
-        this.isReadOnly = data.isReadOnly;
-
         return super._patch(data);
     }
 
@@ -66,9 +60,7 @@ class GroupChat extends Chat {
      */
     async addParticipants(participantIds) {
         return await this.client.pupPage.evaluate((chatId, participantIds) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            const participantWids = participantIds.map(p => window.Store.WidFactory.createWid(p));
-            return window.Store.GroupParticipants.sendAddParticipants(chatWid, participantWids);
+            return window.Store.Wap.addParticipants(chatId, participantIds);
         }, this.id._serialized, participantIds);
     }
 
@@ -79,9 +71,7 @@ class GroupChat extends Chat {
      */
     async removeParticipants(participantIds) {
         return await this.client.pupPage.evaluate((chatId, participantIds) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            const participantWids = participantIds.map(p => window.Store.WidFactory.createWid(p));
-            return window.Store.GroupParticipants.sendRemoveParticipants(chatWid, participantWids);
+            return window.Store.Wap.removeParticipants(chatId, participantIds);
         }, this.id._serialized, participantIds);
     }
 
@@ -92,9 +82,7 @@ class GroupChat extends Chat {
      */
     async promoteParticipants(participantIds) {
         return await this.client.pupPage.evaluate((chatId, participantIds) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            const participantWids = participantIds.map(p => window.Store.WidFactory.createWid(p));
-            return window.Store.GroupParticipants.sendPromoteParticipants(chatWid, participantWids);
+            return window.Store.Wap.promoteParticipants(chatId, participantIds);
         }, this.id._serialized, participantIds);
     }
 
@@ -105,53 +93,39 @@ class GroupChat extends Chat {
      */
     async demoteParticipants(participantIds) {
         return await this.client.pupPage.evaluate((chatId, participantIds) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            const participantWids = participantIds.map(p => window.Store.WidFactory.createWid(p));
-            return window.Store.GroupParticipants.sendDemoteParticipants(chatWid, participantWids);
+            return window.Store.Wap.demoteParticipants(chatId, participantIds);
         }, this.id._serialized, participantIds);
     }
 
     /**
      * Updates the group subject
      * @param {string} subject 
-     * @returns {Promise<boolean>} Returns true if the subject was properly updated. This can return false if the user does not have the necessary permissions.
+     * @returns {Promise} 
      */
     async setSubject(subject) {
-        const success = await this.client.pupPage.evaluate(async (chatId, subject) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            try {
-                return await window.Store.GroupUtils.sendSetGroupSubject(chatWid, subject);
-            } catch (err) {
-                if(err.name === 'ServerStatusCodeError') return false;
-                throw err;
-            }
+        let res = await this.client.pupPage.evaluate((chatId, subject) => {
+            return window.Store.Wap.changeSubject(chatId, subject);
         }, this.id._serialized, subject);
 
-        if(!success) return false;
-        this.name = subject;
-        return true;
+        if(res.status == 200) {
+            this.name = subject;
+        }
     }
 
     /**
      * Updates the group description
      * @param {string} description 
-     * @returns {Promise<boolean>} Returns true if the description was properly updated. This can return false if the user does not have the necessary permissions.
+     * @returns {Promise} 
      */
     async setDescription(description) {
-        const success = await this.client.pupPage.evaluate(async (chatId, description) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            let descId = window.Store.GroupMetadata.get(chatWid).descId;
-            try {
-                return await window.Store.GroupUtils.sendSetGroupDescription(chatWid, description, window.Store.genId(), descId);
-            } catch (err) {
-                if(err.name === 'ServerStatusCodeError') return false;
-                throw err;
-            }
+        let res = await this.client.pupPage.evaluate((chatId, description) => {
+            let descId = window.Store.GroupMetadata.get(chatId).descId;
+            return window.Store.Wap.setGroupDescription(chatId, description, window.Store.genId(), descId);
         }, this.id._serialized, description);
 
-        if(!success) return false;
-        this.groupMetadata.desc = description;
-        return true;
+        if (res.status == 200) {
+            this.groupMetadata.desc = description;
+        }
     }
 
     /**
@@ -160,18 +134,12 @@ class GroupChat extends Chat {
      * @returns {Promise<boolean>} Returns true if the setting was properly updated. This can return false if the user does not have the necessary permissions.
      */
     async setMessagesAdminsOnly(adminsOnly=true) {
-        const success = await this.client.pupPage.evaluate(async (chatId, adminsOnly) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            try {
-                return await window.Store.GroupUtils.sendSetGroupProperty(chatWid, 'announcement', adminsOnly ? 1 : 0);
-            } catch (err) {
-                if(err.name === 'ServerStatusCodeError') return false;
-                throw err;
-            }
+        let res = await this.client.pupPage.evaluate((chatId, value) => {
+            return window.Store.Wap.setGroupProperty(chatId, 'announcement', value);
         }, this.id._serialized, adminsOnly);
 
-        if(!success) return false;
-
+        if (res.status !== 200) return false;
+        
         this.groupMetadata.announce = adminsOnly;
         return true;
     }
@@ -182,17 +150,11 @@ class GroupChat extends Chat {
      * @returns {Promise<boolean>} Returns true if the setting was properly updated. This can return false if the user does not have the necessary permissions.
      */
     async setInfoAdminsOnly(adminsOnly=true) {
-        const success = await this.client.pupPage.evaluate(async (chatId, adminsOnly) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            try {
-                return await window.Store.GroupUtils.sendSetGroupProperty(chatWid, 'restrict', adminsOnly ? 1 : 0);
-            } catch (err) {
-                if(err.name === 'ServerStatusCodeError') return false;
-                throw err;
-            }
+        let res = await this.client.pupPage.evaluate((chatId, value) => {
+            return window.Store.Wap.setGroupProperty(chatId, 'restrict', value);
         }, this.id._serialized, adminsOnly);
 
-        if(!success) return false;
+        if (res.status !== 200) return false;
         
         this.groupMetadata.restrict = adminsOnly;
         return true;
@@ -203,25 +165,25 @@ class GroupChat extends Chat {
      * @returns {Promise<string>} Group's invite code
      */
     async getInviteCode() {
-        const code = await this.client.pupPage.evaluate(async chatId => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            return window.Store.Invite.sendQueryGroupInviteCode(chatWid);
+        let res = await this.client.pupPage.evaluate(chatId => {
+            return window.Store.Wap.groupInviteCode(chatId);
         }, this.id._serialized);
 
-        return code;
+        if (res.status == 200) {
+            return res.code;
+        } 
+
+        throw new Error('Not authorized');
     }
     
     /**
      * Invalidates the current group invite code and generates a new one
-     * @returns {Promise<string>} New invite code
+     * @returns {Promise}
      */
     async revokeInvite() {
-        const code = await this.client.pupPage.evaluate(chatId => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            return window.Store.Invite.sendRevokeGroupInviteCode(chatWid);
+        return await this.client.pupPage.evaluate(chatId => {
+            return window.Store.Wap.revokeGroupInvite(chatId);
         }, this.id._serialized);
-
-        return code;
     }
 
     /**
@@ -229,9 +191,8 @@ class GroupChat extends Chat {
      * @returns {Promise}
      */
     async leave() {
-        await this.client.pupPage.evaluate(chatId => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            return window.Store.GroupUtils.sendExitGroup(chatWid);
+        return await this.client.pupPage.evaluate(chatId => {
+            return window.Store.Wap.leaveGroup(chatId);
         }, this.id._serialized);
     }
 

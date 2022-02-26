@@ -69,7 +69,3 @@ typings/
 
 # Test sessions
 *session.json
-
-# user data
-WWebJS/
-userDataDir/
