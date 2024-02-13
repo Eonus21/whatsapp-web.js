@@ -320,8 +320,7 @@ class Client extends EventEmitter {
                     await button.click();
                 };
 
-                const typePhoneNumber = async () => {
-                    const input = await page.waitForXPath(PHONE_NUMBER_INPUT);
+                const typePhoneNumber = async (input) => {
                     await this.sleep(sleepTimeout);
                     const inputValue =  await (await input.getProperty('value')).jsonValue()
                     await input.click();
@@ -333,11 +332,10 @@ class Client extends EventEmitter {
                 };
 
                 await clickOnLinkWithPhoneButton();
-                await typePhoneNumber();
+                const phoneNumberInput = await page.waitForXPath(PHONE_NUMBER_INPUT, { timeout: actionTimeout });
+                await typePhoneNumber(phoneNumberInput);
                 await this.sleep(sleepTimeout);
-
-                const nextButton = await page.waitForXPath(NEXT_BUTTON, { timeout: actionTimeout });
-                await nextButton.click();
+                await phoneNumberInput.press('Enter');
                   
                 await page.evaluate(async function (xpaths) {
                     function getElementByXPath(xpath){
