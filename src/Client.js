@@ -99,6 +99,10 @@ class Client extends EventEmitter {
         Util.setFfmpegPath(this.options.ffmpegPath);
     }
 
+    async sleep (ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     /**
      * Sets up events and requirements, kicks off authentication request
      */
@@ -293,6 +297,8 @@ class Client extends EventEmitter {
                 const CODE_CONTAINER = '//div[@dir="ltr" and @aria-label="Enter code on phone:"]';
                 const GENERATE_NEW_CODE_BUTTON = '//div[@role="dialog"]//div[@role="button"]';
                 const LINK_WITH_PHONE_VIEW = '//*[@id="app"]';
+                const actionTimeout = 90000;
+                const sleepTimeout = 2000;
 
 
                 await page.exposeFunction('codeChanged', async (code) => {
@@ -304,22 +310,26 @@ class Client extends EventEmitter {
                     this.emit(Events.CODE_RECEIVED, code);
                 });
                 const clickOnLinkWithPhoneButton = async () => {
-                    const button = await page.waitForXPath(LINK_WITH_PHONE_BUTTON, { timeout: 0 });                    
+                    const button = await page.waitForXPath(LINK_WITH_PHONE_BUTTON, { timeout: actionTimeout });   
+                    await this.sleep(sleepTimeout);
                     await button.click();
                 };
 
                 const typePhoneNumber = async () => {
                     const input = await page.waitForXPath(PHONE_NUMBER_INPUT);
+                    await this.sleep(sleepTimeout);
                     const inputValue =  await (await input.getProperty('value')).jsonValue()
                     await input.click();
                     for (let i = 0; i < inputValue.length; i++) {
                         await page.keyboard.press('Backspace');
                     }
+                    await this.sleep(sleepTimeout);
                     await input.type(this.options.linkingMethod.phone.number);
                 };
 
                 await clickOnLinkWithPhoneButton();
                 await typePhoneNumber();
+                await this.sleep(sleepTimeout);
                 await (await page.$x(NEXT_BUTTON))[0].click();
                   
                 await page.evaluate(async function (xpaths) {
@@ -356,7 +366,7 @@ class Client extends EventEmitter {
                         });
                     }
 
-                    await waitForElementToExist(xpaths.CODE_CONTAINER);
+                    await waitForElementToExist(xpaths.CODE_CONTAINER, actionTimeout);
 
                     const getCode = () => {
                         const codeContainer = getElementByXPath(xpaths.CODE_CONTAINER);
