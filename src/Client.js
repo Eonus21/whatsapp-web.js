@@ -135,6 +135,10 @@ class Client extends EventEmitter {
         this.pupBrowser = browser;
         this.pupPage = page;
 
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'en'
+          });
+
         await page.goto(WhatsWebURL, {
             waitUntil: 'load',
             timeout: 0,
