@@ -341,7 +341,7 @@ class Client extends EventEmitter {
                     function getElementByXPath(xpath){
                         return document.evaluate(xpath,document,null,XPathResult.ANY_UNORDERED_NODE_TYPE).singleNodeValue
                     }   
-                    function waitForElementToExist(xpath, timeout = 60000) {
+                    function waitForElementToExist(xpath, timeout = 90000) {
                         return new Promise((resolve, reject) => {
                             if (getElementByXPath(xpath)) {
                                 return resolve(getElementByXPath(xpath));
@@ -371,7 +371,7 @@ class Client extends EventEmitter {
                         });
                     }
 
-                    await waitForElementToExist(xpaths.CODE_CONTAINER, actionTimeout);
+                    await waitForElementToExist(xpaths.CODE_CONTAINER);
 
                     const getCode = () => {
                         const codeContainer = getElementByXPath(xpaths.CODE_CONTAINER);
