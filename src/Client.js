@@ -227,6 +227,9 @@ class Client extends EventEmitter {
                 }
                 return;
             }
+
+            const actionTimeout = 90000;
+            const sleepTimeout = 2000;
             
             const handleLinkWithQRCode = async () => {
                 const QR_CONTAINER = 'div[data-ref]';
@@ -297,8 +300,6 @@ class Client extends EventEmitter {
                 const CODE_CONTAINER = '//div[@dir="ltr" and @aria-label="Enter code on phone:"]';
                 const GENERATE_NEW_CODE_BUTTON = '//div[@role="dialog"]//div[@role="button"]';
                 const LINK_WITH_PHONE_VIEW = '//*[@id="app"]';
-                const actionTimeout = 90000;
-                const sleepTimeout = 2000;
 
 
                 await page.exposeFunction('codeChanged', async (code) => {
