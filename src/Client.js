@@ -329,13 +329,15 @@ class Client extends EventEmitter {
                         await page.keyboard.press('Backspace');
                     }
                     await this.sleep(sleepTimeout);
-                    await input.type(this.options.linkingMethod.phone.number);
+                    await input.type(this.options.linkingMethod.phone.number, { delay: 200 });
                 };
 
                 await clickOnLinkWithPhoneButton();
                 await typePhoneNumber();
                 await this.sleep(sleepTimeout);
-                await (await page.$x(NEXT_BUTTON))[0].click();
+
+                const nextButton = await page.waitForXPath(NEXT_BUTTON, { timeout: actionTimeout });
+                await nextButton.click();
                   
                 await page.evaluate(async function (xpaths) {
                     function getElementByXPath(xpath){
