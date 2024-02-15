@@ -99,6 +99,10 @@ class Client extends EventEmitter {
         Util.setFfmpegPath(this.options.ffmpegPath);
     }
 
+    async sleep (ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     /**
      * Sets up events and requirements, kicks off authentication request
      */
@@ -130,6 +134,10 @@ class Client extends EventEmitter {
 
         this.pupBrowser = browser;
         this.pupPage = page;
+
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'en'
+          });
 
         await page.goto(WhatsWebURL, {
             waitUntil: 'load',
@@ -223,6 +231,9 @@ class Client extends EventEmitter {
                 }
                 return;
             }
+
+            const actionTimeout = 90000;
+            const sleepTimeout = 2000;
             
             const handleLinkWithQRCode = async () => {
                 const QR_CONTAINER = 'div[data-ref]';
@@ -304,29 +315,33 @@ class Client extends EventEmitter {
                     this.emit(Events.CODE_RECEIVED, code);
                 });
                 const clickOnLinkWithPhoneButton = async () => {
-                    const button = await page.waitForXPath(LINK_WITH_PHONE_BUTTON, { timeout: 0 });                    
+                    const button = await page.waitForXPath(LINK_WITH_PHONE_BUTTON, { timeout: actionTimeout });   
+                    await this.sleep(sleepTimeout);
                     await button.click();
                 };
 
-                const typePhoneNumber = async () => {
-                    const input = await page.waitForXPath(PHONE_NUMBER_INPUT);
+                const typePhoneNumber = async (input) => {
+                    await this.sleep(sleepTimeout);
                     const inputValue =  await (await input.getProperty('value')).jsonValue()
                     await input.click();
                     for (let i = 0; i < inputValue.length; i++) {
                         await page.keyboard.press('Backspace');
                     }
-                    await input.type(this.options.linkingMethod.phone.number);
+                    await this.sleep(sleepTimeout);
+                    await input.type(this.options.linkingMethod.phone.number, { delay: 200 });
                 };
 
                 await clickOnLinkWithPhoneButton();
-                await typePhoneNumber();
-                await (await page.$x(NEXT_BUTTON))[0].click();
+                const phoneNumberInput = await page.waitForXPath(PHONE_NUMBER_INPUT, { timeout: actionTimeout });
+                await typePhoneNumber(phoneNumberInput);
+                await this.sleep(sleepTimeout);
+                await phoneNumberInput.press('Enter');
                   
                 await page.evaluate(async function (xpaths) {
                     function getElementByXPath(xpath){
                         return document.evaluate(xpath,document,null,XPathResult.ANY_UNORDERED_NODE_TYPE).singleNodeValue
                     }   
-                    function waitForElementToExist(xpath, timeout = 60000) {
+                    function waitForElementToExist(xpath, timeout = 90000) {
                         return new Promise((resolve, reject) => {
                             if (getElementByXPath(xpath)) {
                                 return resolve(getElementByXPath(xpath));
