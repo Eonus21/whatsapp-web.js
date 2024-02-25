@@ -485,6 +485,9 @@ class Client extends EventEmitter {
             };
         });
 
+        await page.evaluate(() => {
+            console.log(Object.keys(window).filter((t) => t.startsWith('webpack')));
+        });
         await page.evaluate(ExposeStore, moduleRaid.toString());
         const authEventPayload = await this.authStrategy.getAuthEventPayload();
 
