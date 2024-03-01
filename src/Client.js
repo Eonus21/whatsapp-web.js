@@ -152,6 +152,12 @@ class Client extends EventEmitter {
                 return error;
             };
         });
+
+        await page.setCookie({
+            domain: 'web.whatsapp.com',
+            name: 'wa_build',
+            value: 'w',
+        })
         
         await page.goto(WhatsWebURL, {
             waitUntil: 'load',
