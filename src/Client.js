@@ -154,7 +154,7 @@ class Client extends EventEmitter {
         });
 
         await page.setCookie({
-            domain: 'web.whatsapp.com',
+            domain: 'https://web.whatsapp.com',
             name: 'wa_build',
             value: 'w',
         })
