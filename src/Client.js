@@ -154,9 +154,7 @@ class Client extends EventEmitter {
         });
 
         const checkAndFixBuildCookie = async () => {
-            const cookies = await page.cookies([
-                '.web.whatsapp.com'
-            ]);
+            const cookies = await page.cookies('.web.whatsapp.com');
             const waBuildCookie = cookies.find(c => c.name === 'wa_build');
             if (!waBuildCookie || waBuildCookie.value === 'w') return;
             await page.setCookie({ 
