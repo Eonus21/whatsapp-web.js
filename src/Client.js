@@ -152,23 +152,6 @@ class Client extends EventEmitter {
                 return error;
             };
         });
-
-        const checkAndFixBuildCookie = async () => {
-            await page.setCookie({
-                "name": "wa_build",
-                "value": "w",
-                "domain": ".web.whatsapp.com",
-                "path": "/",
-                "httpOnly": false,
-                "secure": true,
-                "session": false,
-                "sameParty": false,
-                "sourceScheme": "Secure",
-                "sourcePort": 443
-            })
-        };
-
-        await checkAndFixBuildCookie();
         
         await page.goto(WhatsWebURL, {
             waitUntil: 'load',
