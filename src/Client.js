@@ -338,6 +338,9 @@ class Client extends EventEmitter {
                     await this.sleep(sleepTimeout);
                     const inputValue =  await (await input.getProperty('value')).jsonValue()
                     await input.click();
+                    if (inputValue.endsWith(' ')) {
+                        await page.keyboard.press('ArrowLeft')
+                    }
                     for (let i = 0; i < inputValue.length; i++) {
                         await page.keyboard.press('Backspace');
                     }
