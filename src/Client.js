@@ -396,8 +396,11 @@ class Client extends EventEmitter {
 
                     const getCode = () => {
                         const codeContainer = getElementByXPath(xpaths.CODE_CONTAINER);
+                        
+                        if (!codeContainer?.children?.length) return '';
                         const code = Array.from(codeContainer.children)[0];
 
+                        if (!code?.children?.length) return '';
                         const cells = Array.from(code.children);
                         return cells.map((cell) => cell.textContent).join('');
                     };
