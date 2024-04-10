@@ -129,7 +129,20 @@ class Client extends EventEmitter {
 
         await page.setExtraHTTPHeaders({
             'Accept-Language': 'en'
-          });
+        });
+
+        await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'language', {
+                get: function() {
+                    return 'en-GB';
+                }
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: function() {
+                    return ['en-GB', 'en'];
+                }
+            });
+        });
 
         // ocVersion (isOfficialClient patch)
         // remove on after 2.3000.x
