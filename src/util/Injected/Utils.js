@@ -30,6 +30,24 @@ exports.LoadUtils = () => {
     };
 
     window.WWebJS.sendMessage = async (chat, content, options = {}) => {
+        let attOptions = {};
+        if (options.attachment) {
+            attOptions = options.sendMediaAsSticker
+                ? await window.WWebJS.processStickerData(options.attachment)
+                : await window.WWebJS.processMediaData(options.attachment, {
+                      forceVoice: options.sendAudioAsVoice,
+                      forceDocument: options.sendMediaAsDocument,
+                      forceGif: options.sendVideoAsGif,
+                  });
+
+            attOptions.caption = options.caption;
+            content = options.sendMediaAsSticker
+                ? undefined
+                : attOptions.preview;
+            attOptions.isViewOnce = options.isViewOnce;
+
+            delete options.attachment;
+        }
         const isChannel = window.Store.ChatGetters.getIsNewsletter(chat);
 
         let mediaOptions = {};
