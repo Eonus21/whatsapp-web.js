@@ -23,37 +23,21 @@ const ChatFactory = require("./factories/ChatFactory");
 const ContactFactory = require("./factories/ContactFactory");
 const WebCacheFactory = require("./webCache/WebCacheFactory");
 const {
+    Broadcast,
+    Buttons,
+    Call,
     ClientInfo,
-    Message,
-    MessageMedia,
     Contact,
-    Location,
-    Poll,
-    PollVote,
     GroupNotification,
     Label,
-    Call,
-    Buttons,
     List,
+    Location,
+    Message,
+    MessageMedia,
+    Poll,
+    PollVote,
     Reaction,
-    Broadcast,
     ScheduledEvent,
-} = require("./structures");
-const {
-    Broadcast,
-    Buttons,
-    Call,
-    ClientInfo,
-    Contact,
-    GroupNotification,
-    Label,
-    List,
-    Location,
-    Message,
-    MessageMedia,
-    Poll,
-    PollVote,
-    Reaction,
 } = require("./structures");
 const NoAuth = require("./authStrategies/NoAuth");
 const { exposeFunctionIfAbsent } = require("./util/Puppeteer");
