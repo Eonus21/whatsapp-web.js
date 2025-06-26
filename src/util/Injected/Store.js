@@ -130,6 +130,7 @@ exports.ExposeStore = () => {
         "WAWebAddonReactionTableMode"
     ).reactionTableMode;
     window.Store.ChatGetters = window.require("WAWebChatGetters");
+    window.Store.UploadUtils = window.require("WAWebUploadManager");
 
     window.Store.Settings = {
         ...window.require("WAWebUserPrefsGeneral"),
