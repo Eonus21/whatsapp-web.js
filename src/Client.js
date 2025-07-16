@@ -1203,6 +1203,25 @@ class Client extends EventEmitter {
     }
 
     /**
+     * Find chat by chatId, or create it if it does not exist
+     *  @param {string} chatId
+     *  @returns {Promise<string>} id of chat
+     *
+     */
+    async findOrCreateChat(chatId) {
+        return await this.pupPage.evaluate(async (chatId) => {
+            let wid = window.Store.WidFactory.createWid(chatId);
+            let type = wid?.isLid?.() ? 'username_contactless_search' : 'createChat';
+            let result = await window.Store.FindOrCreateChat(wid, type);
+
+            if (result && result.chat && result.chat.id) {
+                return result.chat.id;
+            }
+            return null;
+        }, chatId);
+    }
+
+    /**
      * Mark as seen for the Chat
      *  @param {string} chatId
      *  @returns {Promise<boolean>} result

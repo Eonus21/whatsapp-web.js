@@ -171,6 +171,9 @@ declare namespace WAWebJS {
         /** Sends a channel admin invitation to a user, allowing them to become an admin of the channel */
         sendChannelAdminInvite(chatId: string, channelId: string, options?: { comment?: string }): Promise<boolean>
         
+        /** Find chat by chatId, or create it if it does not exist */
+        findOrCreateChat(chatId: string): Promise<string | null>
+
         /** Searches for messages */
         searchMessages(query: string, options?: { chatId?: string, page?: number, limit?: number }): Promise<Message[]>
 
