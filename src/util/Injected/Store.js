@@ -146,11 +146,13 @@ exports.ExposeStore = () => {
     window.Store.ForwardUtils = {
         ...window.require("WAWebForwardMessagesToChat"),
     };
-    window.Store.ScheduledEventMsgUtils = {
-        ...window.require("WAWebEventsCreateCallLinkJob"),
-        ...window.require("WAWebSendEventEditMsgAction"),
-        ...window.require("WAWebSendEventResponseMsgAction"),
-    };
+    try {
+        window.Store.ScheduledEventMsgUtils = {
+            ...window.require("WAWebEventsCreateCallLinkJob"),
+            ...window.require("WAWebSendEventEditMsgAction"),
+            ...window.require("WAWebSendEventResponseMsgAction"),
+        };
+    } catch (e) {}
     window.Store.VCard = {
         ...window.require("WAWebFrontendVcardUtils"),
         ...window.require("WAWebVcardParsingUtils"),
