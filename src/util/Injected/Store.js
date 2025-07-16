@@ -148,7 +148,7 @@ exports.ExposeStore = () => {
     };
     try {
         window.Store.ScheduledEventMsgUtils = {
-            ...window.require("WAWebEventsCreateCallLinkJob"),
+            // ...window.require("WAWebEventsCreateCallLinkJob"),
             ...window.require("WAWebSendEventEditMsgAction"),
             ...window.require("WAWebSendEventResponseMsgAction"),
         };
