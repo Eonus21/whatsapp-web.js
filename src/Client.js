@@ -1214,8 +1214,8 @@ class Client extends EventEmitter {
             let type = wid?.isLid?.() ? 'username_contactless_search' : 'createChat';
             let result = await window.Store.FindOrCreateChat(wid, type);
 
-            if (result && result.chat && result.chat.id) {
-                return result.chat.id;
+            if (result && result.chat && result.chat.id && result.chat.id._serialized) {
+                return result.chat.id._serialized;
             }
             return null;
         }, chatId);
