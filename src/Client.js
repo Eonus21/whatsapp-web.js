@@ -406,13 +406,16 @@ class Client extends EventEmitter {
     async clickNewVersionModalButton() {
         try {
             const modalSelector = 'div[data-animate-modal-popup="true"]';
-            const modalExists = await this.pupPage.evaluate((selector) => {
-                return !!document.querySelector(selector);
-            }, modalSelector);
-            if (!modalExists) return;
+            const modalExists = await this.pupPage.waitForSelector(modalSelector, {
+                timeout: 30000,
+                visible: true,
+            }).then(() => true).catch(() => false);
+            if (!modalExists) {
+                return
+            }
             const buttonSelector = `${modalSelector} button div:not(:empty)`;
             const buttonText = ["Продолжить", "Continue"];
-            await this.pupPage.evaluate((selector) => {
+            await this.pupPage.evaluate((selector, buttonText) => {
                 const elements = document.querySelectorAll(selector);
                 for (const element of elements) {
                     const text = element.textContent.trim();
@@ -420,8 +423,8 @@ class Client extends EventEmitter {
                       element.click();
                       return;
                     }
-                  }
-            }, buttonSelector);
+                }
+            }, buttonSelector, buttonText);
         } catch (error) {
             console.error("Error clicking new version modal button:", error);
         }
