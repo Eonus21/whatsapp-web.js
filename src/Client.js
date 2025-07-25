@@ -2953,6 +2953,21 @@ class Client extends EventEmitter {
             );
         }, phoneNumber);
     }
+
+
+    /**
+     * Get lid or phone number 
+     * @param {string} userId
+     * @returns {Promise<string>}
+     */
+    async getContactLidOrPhone(userId) {
+        return await this.pupPage.evaluate((userId) => {
+            const wid = window.Store.WidFactory.createWid(userId);
+            return wid.server === 'lid'
+                ? window.Store.LidUtils.getPhoneNumber(wid)?._serialized
+                : window.Store.LidUtils.getCurrentLid(wid)?._serialized;
+        }, userId);
+    }
 }
 
 module.exports = Client;
