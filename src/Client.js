@@ -527,37 +527,45 @@ class Client extends EventEmitter {
      * @returns {Promise<string>} - Returns a pairing code in format "ABCDEFGH"
      */
     async requestPairingCode(phoneNumber, showNotification = true) {
-        return await this.pupPage.evaluate(
-            async (phoneNumber, showNotification, pairingCodeTTL) => {
-                const getCode = async () => {
-                    window.AuthStore.PairingCodeLinkUtils.setPairingType(
-                        "ALT_DEVICE_LINKING"
-                    );
-                    await window.AuthStore.PairingCodeLinkUtils.initializeAltDeviceLinking();
-                    return window.AuthStore.PairingCodeLinkUtils.startAltLinkingFlow(
-                        phoneNumber,
-                        showNotification
-                    );
-                };
-                if (window.codeInterval) {
-                    clearInterval(window.codeInterval); // remove existing interval
-                }
-                window.codeInterval = setInterval(async () => {
-                    if (
-                        window.AuthStore.AppState.state != "UNPAIRED" &&
-                        window.AuthStore.AppState.state != "UNPAIRED_IDLE"
-                    ) {
-                        clearInterval(window.codeInterval);
-                        return;
+        try {
+            return await this.pupPage.evaluate(
+                async (phoneNumber, showNotification, pairingCodeTTL) => {
+                    const getCode = async () => {
+                        window.AuthStore.PairingCodeLinkUtils.setPairingType(
+                            "ALT_DEVICE_LINKING"
+                        );
+                        await window.AuthStore.PairingCodeLinkUtils.initializeAltDeviceLinking();
+                        return window.AuthStore.PairingCodeLinkUtils.startAltLinkingFlow(
+                            phoneNumber,
+                            showNotification
+                        );
+                    };
+                    if (window.codeInterval) {
+                        clearInterval(window.codeInterval); // remove existing interval
                     }
-                    window.onCodeReceivedEvent(await getCode());
-                }, pairingCodeTTL * 1000);
-                return window.onCodeReceivedEvent(await getCode());
-            },
-            phoneNumber,
-            showNotification,
-            this.pairingCodeTTL
-        );
+                    window.codeInterval = setInterval(async () => {
+                        if (
+                            window.AuthStore.AppState.state != "UNPAIRED" &&
+                            window.AuthStore.AppState.state != "UNPAIRED_IDLE"
+                        ) {
+                            clearInterval(window.codeInterval);
+                            return;
+                        }
+                        window.onCodeReceivedEvent(await getCode());
+                    }, pairingCodeTTL * 1000);
+                    return window.onCodeReceivedEvent(await getCode());
+                },
+                phoneNumber,
+                showNotification,
+                this.pairingCodeTTL
+            );
+        } catch (error) {
+                /**
+                 * Emitted when the pairing code request fails
+                 * @event Client#code_failed
+                 */
+            this.emit(Events.CODE_FAILED)
+        }
     }
 
     /**
