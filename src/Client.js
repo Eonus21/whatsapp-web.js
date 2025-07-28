@@ -1167,36 +1167,37 @@ class Client extends EventEmitter {
                 if(res.ok() && res.url() === WhatsWebURL) {
                     const indexHtml = await res.text();
                     this.currentIndexHtml = indexHtml;
-                }
-                // Get pairing code expiration time in seconds
-                try {
-                    if (
-                        this.pairingCodeTTL == null &&
-                        this.options?.pairWithPhoneNumber?.phoneNumber
-                    ) {
-                        const index = textContent?.indexOf(
-                            '("WAWebAltDeviceLinkingApi",['
-                        );
-                        if (index > -1) {
-                            const execRegex = (reg) => {
-                                reg.lastIndex = index;
-                                return reg.exec(textContent);
-                            };
-                            const captureVarName = execRegex(
-                                /.codeGenerationTs>(.+?)\)/g
+                    // Get pairing code expiration time in seconds
+                    try {
+                        if (
+                            this.pairingCodeTTL == null &&
+                            this.options?.pairWithPhoneNumber?.phoneNumber &&
+                            indexHtml?.length > 0
+                        ) {
+                            const index = indexHtml?.indexOf(
+                                '("WAWebAltDeviceLinkingApi",['
                             );
-                            // Find last occurrence of the variable definition
-                            const captureValue = execRegex(
-                                new RegExp(
-                                    `${captureVarName[1]}=(\\d+)(?!.*${captureVarName[1]}=.+?codeGenerationTs>)`,
-                                    "g"
-                                )
-                            );
-                            this.pairingCodeTTL = Number(captureValue[1]);
+                            if (index > -1) {
+                                const execRegex = (reg) => {
+                                    reg.lastIndex = index;
+                                    return reg.exec(indexHtml);
+                                };
+                                const captureVarName = execRegex(
+                                    /.codeGenerationTs>(.+?)\)/g
+                                );
+                                // Find last occurrence of the variable definition
+                                const captureValue = execRegex(
+                                    new RegExp(
+                                        `${captureVarName[1]}=(\\d+)(?!.*${captureVarName[1]}=.+?codeGenerationTs>)`,
+                                        "g"
+                                    )
+                                );
+                                this.pairingCodeTTL = Number(captureValue[1]);
+                            }
                         }
+                    } catch (error) {
+                        console.error("Error extracting pairing code TTL:", error);
                     }
-                } catch (error) {
-                    console.error("Error extracting pairing code TTL:", error);
                 }
             });
         }
