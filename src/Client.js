@@ -1163,36 +1163,40 @@ class Client extends EventEmitter {
                 }
             });
         } else {
-            this.pupPage.on("response", async (res) => {
-                const textContent = await res.text();
-                // Get pairing code expiration time in seconds
-                if (
-                    this.pairingCodeTTL == null &&
-                    this.options.pairWithPhoneNumber.phoneNumber
-                ) {
-                    const index = textContent.indexOf(
-                        '("WAWebAltDeviceLinkingApi",['
-                    );
-                    if (index > -1) {
-                        const execRegex = (reg) => {
-                            reg.lastIndex = index;
-                            return reg.exec(textContent);
-                        };
-                        const captureVarName = execRegex(
-                            /.codeGenerationTs>(.+?)\)/g
-                        );
-                        // Find last occurrence of the variable definition
-                        const captureValue = execRegex(
-                            new RegExp(
-                                `${captureVarName[1]}=(\\d+)(?!.*${captureVarName[1]}=.+?codeGenerationTs>)`,
-                                "g"
-                            )
-                        );
-                        this.pairingCodeTTL = Number(captureValue[1]);
-                    }
+            this.pupPage.on('response', async (res) => {
+                if(res.ok() && res.url() === WhatsWebURL) {
+                    const indexHtml = await res.text();
+                    this.currentIndexHtml = indexHtml;
                 }
-                if (res.ok() && res.url() === WhatsWebURL) {
-                    this.currentIndexHtml = textContent;
+                // Get pairing code expiration time in seconds
+                try {
+                    if (
+                        this.pairingCodeTTL == null &&
+                        this.options?.pairWithPhoneNumber?.phoneNumber
+                    ) {
+                        const index = textContent?.indexOf(
+                            '("WAWebAltDeviceLinkingApi",['
+                        );
+                        if (index > -1) {
+                            const execRegex = (reg) => {
+                                reg.lastIndex = index;
+                                return reg.exec(textContent);
+                            };
+                            const captureVarName = execRegex(
+                                /.codeGenerationTs>(.+?)\)/g
+                            );
+                            // Find last occurrence of the variable definition
+                            const captureValue = execRegex(
+                                new RegExp(
+                                    `${captureVarName[1]}=(\\d+)(?!.*${captureVarName[1]}=.+?codeGenerationTs>)`,
+                                    "g"
+                                )
+                            );
+                            this.pairingCodeTTL = Number(captureValue[1]);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error extracting pairing code TTL:", error);
                 }
             });
         }
