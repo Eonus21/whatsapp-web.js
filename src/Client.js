@@ -2999,17 +2999,23 @@ class Client extends EventEmitter {
     }
 
 
+
     /**
-     * Get lid or phone number 
-     * @param {string} userId
-     * @returns {Promise<string>}
+     * Get lid and phone number
+     * @param {string} userId - user ID
+     * @returns {Promise<{ lid: string, phone: string }>}
      */
-    async getContactLidOrPhone(userId) {
+    async getContactLidAndPhone(userId) {
         return await this.pupPage.evaluate((userId) => {
             const wid = window.Store.WidFactory.createWid(userId);
-            return wid.server === 'lid'
-                ? window.Store.LidUtils.getPhoneNumber(wid)?._serialized
-                : window.Store.LidUtils.getCurrentLid(wid)?._serialized;
+            const isLid = wid.server === 'lid';
+            const lid = isLid ? wid : window.Store.LidUtils.getCurrentLid(wid);
+            const phone = isLid ? window.Store.LidUtils.getPhoneNumber(wid) : wid;
+
+            return {
+                lid: lid?._serialized,
+                phone: phone?._serialized
+            };
         }, userId);
     }
 }
