@@ -101,6 +101,18 @@ class Client extends EventEmitter {
         const version = await this.getWWebVersion();
         const isCometOrAbove = parseInt(version.split('.')?.[1]) >= 3000;
 
+        await this.pupPage.evaluate(() => {
+            const originalRequire = window.require;
+            window.require = (...args) => {
+                try {
+                    return originalRequire(...args);
+                } catch (error) {
+                    console.error('Error in require:', error, 'Args:', args);
+                    return {}
+                }
+            };
+        })
+
         if (isCometOrAbove) {
             await this.pupPage.evaluate(ExposeAuthStore);
         } else {
@@ -365,16 +377,6 @@ class Client extends EventEmitter {
                 const originalStack = error.stack;
                 if (error.stack.includes('moduleRaid')) error.stack = originalStack + '\n    at https://web.whatsapp.com/vendors~lazy_loaded_low_priority_components.05e98054dbd60f980427.js:2:44';
                 return error;
-            };
-
-            const originalRequire = window.require;
-            window.require = (...args) => {
-                try {
-                    return originalRequire(...args);
-                } catch (error) {
-                    console.error('Error in require:', error, 'Args:', args);
-                    return {}
-                }
             };
         });
         
