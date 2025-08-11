@@ -250,6 +250,7 @@ class Client extends EventEmitter {
                  */
             this.emit(Events.READY);
             this.authStrategy.afterAuthReady();
+            this.clickNewVersionModalButton();
         });
         let lastPercent = null;
         await exposeFunctionIfAbsent(this.pupPage, 'onOfflineProgressUpdateEvent', async (percent) => {
@@ -272,6 +273,36 @@ class Client extends EventEmitter {
                 await window.onLogoutEvent();
             });
         });
+    }
+
+    /** 
+     * Clicks on new version modal button to close it
+    */
+    async clickNewVersionModalButton() {
+        try {
+            const modalSelector = 'div[data-animate-modal-popup="true"]';
+            const modalExists = await this.pupPage.waitForSelector(modalSelector, {
+                timeout: 30000,
+                visible: true,
+            }).then(() => true).catch(() => false);
+            if (!modalExists) {
+                return
+            }
+            const buttonSelector = `${modalSelector} button div:not(:empty)`;
+            const buttonText = ["Продолжить", "Continue"];
+            await this.pupPage.evaluate((selector, buttonText) => {
+                const elements = document.querySelectorAll(selector);
+                for (const element of elements) {
+                    const text = element.textContent.trim();
+                    if (buttonText.includes(text)) {
+                      element.click();
+                      return;
+                    }
+                }
+            }, buttonSelector, buttonText);
+        } catch (error) {
+            console.error("Error clicking new version modal button:", error);
+        }
     }
 
     /**
