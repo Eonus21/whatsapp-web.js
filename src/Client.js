@@ -335,6 +335,16 @@ class Client extends EventEmitter {
                 if (error.stack.includes('moduleRaid')) error.stack = originalStack + '\n    at https://web.whatsapp.com/vendors~lazy_loaded_low_priority_components.05e98054dbd60f980427.js:2:44';
                 return error;
             };
+
+            const originalRequire = window.require;
+            window.require = (...args) => {
+                try {
+                    return originalRequire(...args);
+                } catch (error) {
+                    console.error('Error in require:', error, 'Args:', args);
+                    return {}
+                }
+            };
         });
         
         await page.goto(WhatsWebURL, {
