@@ -301,7 +301,7 @@ class Client extends EventEmitter {
                 return
             }
             const buttonSelector = `${modalSelector} button div:not(:empty)`;
-            const buttonText = ["Продолжить", "Continue"];
+            const buttonText = ["Продолжить", "Continue", "Continuar", "Continuare", "Continuez", "Продовжити"];
             await this.pupPage.evaluate((selector, buttonText) => {
                 const elements = document.querySelectorAll(selector);
                 for (const element of elements) {
