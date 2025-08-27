@@ -249,7 +249,7 @@ exports.LoadUtils = () => {
 
         if (typeof chat.id?.isGroup === 'function' && chat.id.isGroup()) {
             from = chat.groupMetadata && chat.groupMetadata.isLidAddressingMode ? lidUser : meUser;
-            participant = window.Store.WidFactory.toUserWid(from);
+            participant = window.Store.WidFactory.toUserWidOrThrow(from);
         }
 
         const newMsgKey = new window.Store.MsgKey({
@@ -548,7 +548,7 @@ exports.LoadUtils = () => {
                 chat = null;
             }
         } else {
-            chat = window.Store.Chat.get(chatWid) || (await window.Store.Chat.find(chatWid));
+            chat = window.Store.Chat.get(chatWid) || (await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid))?.chat;
         }
 
         return getAsModel && chat
