@@ -952,7 +952,7 @@ class Client extends EventEmitter {
         return await this.pupPage.evaluate(async (chatId) => {
             let wid = window.Store.WidFactory.createWid(chatId);
             let type = wid?.isLid?.() ? 'username_contactless_search' : 'createChat';
-            let result = await window.Store.FindOrCreateChat(wid, type);
+            let result = await window.Store.FindOrCreateChat.findOrCreateLatestChat(wid, type);
 
             if (result && result.chat && result.chat.id && result.chat.id._serialized) {
                 return result.chat.id._serialized;
