@@ -2457,7 +2457,7 @@ class Client extends EventEmitter {
         }, userIds);
     }
 
-    async getChatAlternative(chatId, { getAsModel = true } = {}) {
+    async emitGetChatAlternative(chatId, { getAsModel = true } = {}) {
         const isChannel = /@\w*newsletter\b/.test(chatId);
         const chatWid = window.Store.WidFactory.createWid(chatId);
 
@@ -2494,6 +2494,16 @@ class Client extends EventEmitter {
             ? await window.WWebJS.getChatModel(chat, { isChannel: isChannel })
             : chat;
     };
+
+    async getChatAlternative(chatId, { getAsModel = true } = {}) {
+        return await this.pupPage.evaluate(async (chatId, getAsModel) => {
+            try {
+                return await window.WWebJS.getChatAlternative(chatId, { getAsModel });
+            } catch (err) {
+                return null;
+            }
+        }, chatId, getAsModel);
+    }
 }
 
 module.exports = Client;
