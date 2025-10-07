@@ -2456,54 +2456,6 @@ class Client extends EventEmitter {
             }));
         }, userIds);
     }
-
-    async emitGetChatAlternative(chatId, { getAsModel = true } = {}) {
-        const isChannel = /@\w*newsletter\b/.test(chatId);
-        const chatWid = window.Store.WidFactory.createWid(chatId);
-
-        let chat;
-
-        if (isChannel) {
-            try {
-                chat = window.Store.NewsletterCollection.get(chatId);
-                if (!chat) {
-                    await window.Store.ChannelUtils.loadNewsletterPreviewChat(chatId);
-                    chat = await window.Store.NewsletterCollection.find(chatWid);
-                }
-            } catch (err) {
-                chat = null;
-            }
-        } else {
-            chat = await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid)
-                .then(chat => chat.chat)
-                .catch(async err => {
-                    let query = window.require("WAWebContactSyncUtils").constructUsyncDeltaQuery([{
-                        type: "add",
-                        phoneNumber: chatWid.user
-                    }]);
-                    let result = await query.execute();
-                    if (result && Array.isArray(result.list) && result.list.length > 0 && result.list[0] && result.list[0].lid) {
-                        chatLid = window.Store.WidFactory.createWid(result.list[0].lid)
-                        return await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatLid).then(chat => chat.chat).catch(async err => { })
-
-                    }
-                })
-        }
-
-        return getAsModel && chat
-            ? await window.WWebJS.getChatModel(chat, { isChannel: isChannel })
-            : chat;
-    };
-
-    async getChatAlternative(chatId, { getAsModel = true } = {}) {
-        return await this.pupPage.evaluate(async (chatId, getAsModel) => {
-            try {
-                return await window.WWebJS.getChatAlternative(chatId, { getAsModel });
-            } catch (err) {
-                return null;
-            }
-        }, chatId, getAsModel);
-    }
 }
 
 module.exports = Client;
