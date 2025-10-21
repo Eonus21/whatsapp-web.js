@@ -567,6 +567,9 @@ declare namespace WAWebJS {
         webVersion?: string,
         /**  Determines how to retrieve the WhatsApp Web version specified in options.webVersion. */
         webVersionCache?: WebCacheOptions,
+        /** Enable the stealth version of wwebjs, uses puppeteer-stealth and adblocker
+         * @default false */
+        stealth?: boolean,    
         /** How many times should the qrcode be refreshed before giving up
 		 * @default 0 (disabled) */
 		qrMaxRetries?: number,

@@ -1,7 +1,7 @@
 'use strict';
 
 const EventEmitter = require('events');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
 const moduleRaid = require('@pedroslopez/moduleraid/moduleraid');
 
 const Util = require('./util/Util');
@@ -18,6 +18,9 @@ const WebCacheFactory = require('./webCache/WebCacheFactory');
 const { ClientInfo, Message, MessageMedia, Contact, Location, Poll, PollVote, GroupNotification, Label, Call, Buttons, List, Reaction, Broadcast, ScheduledEvent } = require('./structures');
 const NoAuth = require('./authStrategies/NoAuth');
 const { exposeFunctionIfAbsent } = require('./util/Puppeteer');
+
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const AdblockerPlugin = require('puppeteer-extra-plugin-adblocker');
 
 /**
  * Starting point for interacting with the WhatsApp Web API
@@ -349,6 +352,16 @@ class Client extends EventEmitter {
             }
             // navigator.webdriver fix
             browserArgs.push('--disable-blink-features=AutomationControlled');
+
+            if (this.options.stealth) {
+                const stealth = StealthPlugin()
+                stealth.enabledEvasions.delete('iframe.contentWindow');
+                stealth.enabledEvasions.delete('media.codecs');
+                stealth.enabledEvasions.delete('user-agent-override');
+                puppeteer.use(stealth);
+                const adblocker = AdblockerPlugin({ blockTrackers: true })
+                puppeteer.use(adblocker);
+            }
 
             browser = await puppeteer.launch({ ...puppeteerOpts, args: browserArgs });
             page = (await browser.pages())[0];
@@ -2514,7 +2527,7 @@ class Client extends EventEmitter {
             return serialized;
         }, userId);
     }
-    
+
     /**
      * Get Poll Votes
      * @param {string} messageId
@@ -2525,10 +2538,10 @@ class Client extends EventEmitter {
         if (!msg) return [];
         if (msg.type != 'poll_creation') throw 'Invalid usage! Can only be used with a pollCreation message';
 
-        const pollVotes = await this.pupPage.evaluate( async (msg) => {
+        const pollVotes = await this.pupPage.evaluate(async (msg) => {
             const msgKey = window.Store.MsgKey.fromString(msg.id._serialized);
             let pollVotes = await window.Store.PollsVotesSchema.getTable().equals(['parentMsgKey'], msgKey.toString());
-            
+
             return pollVotes.map(item => {
                 const typedArray = new Uint8Array(item.selectedOptionLocalIds);
                 return {
@@ -2538,7 +2551,7 @@ class Client extends EventEmitter {
             });
         }, msg);
 
-        return pollVotes.map((pollVote) => new PollVote(this.client, {...pollVote, parentMessage: msg}));
+        return pollVotes.map((pollVote) => new PollVote(this.client, { ...pollVote, parentMessage: msg }));
     }
 }
 
