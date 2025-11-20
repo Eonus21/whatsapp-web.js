@@ -1,7 +1,7 @@
 'use strict';
 
 const EventEmitter = require('events');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
 const moduleRaid = require('@pedroslopez/moduleraid/moduleraid');
 
 const Util = require('./util/Util');
@@ -18,6 +18,9 @@ const WebCacheFactory = require('./webCache/WebCacheFactory');
 const { ClientInfo, Message, MessageMedia, Contact, Location, Poll, PollVote, GroupNotification, Label, Call, Buttons, List, Reaction, Broadcast, ScheduledEvent } = require('./structures');
 const NoAuth = require('./authStrategies/NoAuth');
 const { exposeFunctionIfAbsent } = require('./util/Puppeteer');
+
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const AdblockerPlugin = require('puppeteer-extra-plugin-adblocker');
 
 /**
  * Starting point for interacting with the WhatsApp Web API
@@ -349,6 +352,16 @@ class Client extends EventEmitter {
             }
             // navigator.webdriver fix
             browserArgs.push('--disable-blink-features=AutomationControlled');
+
+            if (this.options.stealth) {
+                const stealth = StealthPlugin()
+                stealth.enabledEvasions.delete('iframe.contentWindow');
+                stealth.enabledEvasions.delete('media.codecs');
+                stealth.enabledEvasions.delete('user-agent-override');
+                puppeteer.use(stealth);
+                const adblocker = AdblockerPlugin({ blockTrackers: true })
+                puppeteer.use(adblocker);
+            }
 
             browser = await puppeteer.launch({ ...puppeteerOpts, args: browserArgs });
             page = (await browser.pages())[0];
