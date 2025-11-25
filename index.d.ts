@@ -1266,7 +1266,7 @@ declare namespace WAWebJS {
          * The custom message secret, can be used as a poll ID
          * @note It has to be a unique vector with a length of 32
          */
-        messageSecret: Array<number>|undefined
+        messageSecret?: Array<number>
     }
 
     /** Represents a Poll on WhatsApp */
@@ -1300,7 +1300,7 @@ declare namespace WAWebJS {
          * The custom message secret, can be used as an event ID
          * @note It has to be a unique vector with a length of 32
          */
-        messageSecret: Array<number>|undefined
+        messageSecret?: Array<number>
     }
 
     /** Represents a ScheduledEvent on WhatsApp */
