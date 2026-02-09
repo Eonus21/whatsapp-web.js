@@ -317,10 +317,13 @@ class Client extends EventEmitter {
         await this.pupPage.evaluate(() => {
             window.AuthStore.AppState.on('change:state', (_AppState, state) => { window.onAuthAppStateChangedEvent(state); });
             window.AuthStore.AppState.on('change:hasSynced', () => { window.onAppStateHasSyncedEvent(); });
-            window.AuthStore.Cmd.on('offline_progress_update', () => {
+            window.AuthStore.Cmd.on('offline_progress_update_from_bridge', () => {
                 window.onOfflineProgressUpdateEvent(window.AuthStore.OfflineMessageHandler.getOfflineDeliveryProgress());
             });
             window.AuthStore.Cmd.on('logout', async () => {
+                await window.onLogoutEvent();
+            });
+            window.AuthStore.Cmd.on('logout_from_bridge', async () => {
                 await window.onLogoutEvent();
             });
         });
@@ -1151,6 +1154,7 @@ class Client extends EventEmitter {
             sendMediaAsDocument: options.sendMediaAsDocument,
             sendMediaAsHd: options.sendMediaAsHd,
             caption: options.caption,
+            isCaptionByUser: options.caption ? true : false,
             quotedMessageId: options.quotedMessageId,
             parseVCards: options.parseVCards !== false,
             mentionedJidList: options.mentions || [],
@@ -2124,7 +2128,7 @@ class Client extends EventEmitter {
      * @returns {Promise<boolean>} Returns true if the operation completed successfully, false otherwise
      */
     async deleteChannel(channelId) {
-        return await this.client.pupPage.evaluate(async (channelId) => {
+        return await this.pupPage.evaluate(async (channelId) => {
             const channel = await window.WWebJS.getChat(channelId, { getAsModel: false });
             if (!channel) return false;
             try {
