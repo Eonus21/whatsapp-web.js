@@ -16,7 +16,7 @@ exports.LoadUtils = () => {
             await window.Store.SendSeen.sendSeen({
                 chat: chat,
                 threadId: undefined
-            });         
+            });
             window.Store.WAWebStreamModel.Stream.markUnavailable();
             return true;
         }
@@ -582,20 +582,25 @@ exports.LoadUtils = () => {
                 chat = null;
             }
         } else {
-            chat = await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid)
-                .then(chat => chat.chat)
-                .catch(async err => {
-                    let query = window.require("WAWebContactSyncUtils").constructUsyncDeltaQuery([{
-                        type: "add",
+            chat = window.Store.Chat.get(chatWid);
+            if (!chat) {
+                chat = (await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatWid).catch(() => null))?.chat;
+            }
+            if (!chat) {
+                try {
+                    const query = window.require('WAWebContactSyncUtils').constructUsyncDeltaQuery([{
+                        type: 'add',
                         phoneNumber: chatWid.user
                     }]);
-                    let result = await query.execute();
-                    if (result && Array.isArray(result.list) && result.list.length > 0 && result.list[0] && result.list[0].lid) {
-                        chatLid = window.Store.WidFactory.createWid(result.list[0].lid)
-                        return await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatLid).then(chat => chat.chat).catch(async err => { })
-
+                    const result = await query.execute();
+                    if (result?.list?.[0]?.lid) {
+                        const chatLid = window.Store.WidFactory.createWid(result.list[0].lid);
+                        chat = (await window.Store.FindOrCreateChat.findOrCreateLatestChat(chatLid).catch(() => null))?.chat;
                     }
-                })
+                } catch (e) {
+                    // LID resolution failed, chat remains undefined
+                }
+            }
         }
 
         return getAsModel && chat
