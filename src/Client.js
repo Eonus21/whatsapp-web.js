@@ -595,49 +595,57 @@ class Client extends EventEmitter {
         showNotification = true,
         intervalMs = 180000,
     ) {
-        await exposeFunctionIfAbsent(
-            this.pupPage,
-            'onCodeReceivedEvent',
-            async (code) => {
-                this.emit(Events.CODE_RECEIVED, code);
-                return code;
-            },
-        );
-        return await this.pupPage.evaluate(
-            async (phoneNumber, showNotification, intervalMs) => {
-                const getCode = async () => {
-                    while (!window.AuthStore.PairingCodeLinkUtils) {
-                        await new Promise((resolve) =>
-                            setTimeout(resolve, 250),
+        try {
+            await exposeFunctionIfAbsent(
+                this.pupPage,
+                'onCodeReceivedEvent',
+                async (code) => {
+                    this.emit(Events.CODE_RECEIVED, code);
+                    return code;
+                },
+            );
+            return await this.pupPage.evaluate(
+                async (phoneNumber, showNotification, intervalMs) => {
+                    const getCode = async () => {
+                        while (!window.AuthStore.PairingCodeLinkUtils) {
+                            await new Promise((resolve) =>
+                                setTimeout(resolve, 250),
+                            );
+                        }
+                        window.AuthStore.PairingCodeLinkUtils.setPairingType(
+                            'ALT_DEVICE_LINKING',
                         );
+                        await window.AuthStore.PairingCodeLinkUtils.initializeAltDeviceLinking();
+                        return window.AuthStore.PairingCodeLinkUtils.startAltLinkingFlow(
+                            phoneNumber,
+                            showNotification,
+                        );
+                    };
+                    if (window.codeInterval) {
+                        clearInterval(window.codeInterval); // remove existing interval
                     }
-                    window.AuthStore.PairingCodeLinkUtils.setPairingType(
-                        'ALT_DEVICE_LINKING',
-                    );
-                    await window.AuthStore.PairingCodeLinkUtils.initializeAltDeviceLinking();
-                    return window.AuthStore.PairingCodeLinkUtils.startAltLinkingFlow(
-                        phoneNumber,
-                        showNotification,
-                    );
-                };
-                if (window.codeInterval) {
-                    clearInterval(window.codeInterval); // remove existing interval
-                }
-                window.codeInterval = setInterval(async () => {
-                    const state =
-                        window.require('WAWebSocketModel').Socket.state;
-                    if (state != 'UNPAIRED' && state != 'UNPAIRED_IDLE') {
-                        clearInterval(window.codeInterval);
-                        return;
-                    }
-                    window.onCodeReceivedEvent(await getCode());
-                }, intervalMs);
-                return window.onCodeReceivedEvent(await getCode());
-            },
-            phoneNumber,
-            showNotification,
-            intervalMs,
-        );
+                    window.codeInterval = setInterval(async () => {
+                        const state =
+                            window.require('WAWebSocketModel').Socket.state;
+                        if (state != 'UNPAIRED' && state != 'UNPAIRED_IDLE') {
+                            clearInterval(window.codeInterval);
+                            return;
+                        }
+                        window.onCodeReceivedEvent(await getCode());
+                    }, intervalMs);
+                    return window.onCodeReceivedEvent(await getCode());
+                },
+                phoneNumber,
+                showNotification,
+                intervalMs,
+            );
+        } catch (error) {
+            /**
+             * Emitted when the pairing code request fails
+             * @event Client#code_failed
+             */
+            this.emit(Events.CODE_FAILED);
+        }
     }
 
     /**
