@@ -1382,6 +1382,25 @@ class Client extends EventEmitter {
         });
     }
 
+    /**
+     * Find chat by chatId, or create it if it does not exist
+     * @param {string} chatId
+     * @returns {Promise<string|null>} id of chat
+     */
+    async findOrCreateChat(chatId) {
+        return await this.pupPage.evaluate(async (chatId) => {
+            const wid = window.require('WAWebWidFactory').createWid(chatId);
+            const result = await window
+                .require('WAWebFindChatAction')
+                .findOrCreateLatestChat(wid)
+                .catch(() => null);
+            if (result?.chat?.id?._serialized) {
+                return result.chat.id._serialized;
+            }
+            return null;
+        }, chatId);
+    }
+
     async setDeviceName(deviceName, browserName) {
         (deviceName || browserName) &&
             (await this.pupPage.evaluate(

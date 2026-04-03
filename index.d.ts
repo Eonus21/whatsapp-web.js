@@ -217,6 +217,9 @@ declare namespace WAWebJS {
             options?: { comment?: string },
         ): Promise<boolean>;
 
+        /** Find chat by chatId, or create it if it does not exist */
+        findOrCreateChat(chatId: string): Promise<string | null>;
+
         /** Searches for messages */
         searchMessages(
             query: string,
