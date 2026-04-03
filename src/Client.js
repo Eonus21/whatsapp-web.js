@@ -1,7 +1,9 @@
 'use strict';
 
 const EventEmitter = require('events');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const AdblockerPlugin = require('puppeteer-extra-plugin-adblocker');
 
 const Util = require('./util/Util');
 const InterfaceController = require('./util/InterfaceController');
@@ -141,6 +143,18 @@ class Client extends EventEmitter {
         const version = await this.getWWebVersion();
 
         await this.pupPage.evaluate(ExposeAuthStore);
+
+        await this.pupPage.evaluate(() => {
+            const originalRequire = window.require;
+            window.require = (...args) => {
+                try {
+                    return originalRequire(...args);
+                } catch (error) {
+                    console.error('Error in require:', error, 'Args:', args);
+                    return {};
+                }
+            };
+        });
 
         const needAuthentication = await this.pupPage.evaluate(async () => {
             let state = window.require('WAWebSocketModel').Socket.state;
@@ -322,6 +336,18 @@ class Client extends EventEmitter {
                         await webCache.persist(this.currentIndexHtml, version);
                     }
 
+                    await new Promise((r) => setTimeout(r, 10000)); // Avoid error "Dropping db read operation due to logout"
+                    await this.pupPage.evaluate(async () => {
+                        const targetABFlag = 'wa_web_disable_prefetch_loadables';
+                        const ABPrefetchLoadablesExists = !!(await window.require('WAWebABPropsConfigs').ABPropConfigs[targetABFlag]);
+                        if (ABPrefetchLoadablesExists) {
+                            const isUsingABPrefetchLoadables = await window.require('WAWebABProps').getABPropConfigValue(targetABFlag);
+                            if (isUsingABPrefetchLoadables) {
+                                await window.require('WAWebPrefetchLoadables')();
+                            }
+                        }
+                    });
+
                     //Load util functions (serializers, helper functions)
                     await this.pupPage.evaluate(LoadUtils);
 
@@ -373,6 +399,7 @@ class Client extends EventEmitter {
                  */
                 this.emit(Events.READY);
                 this.authStrategy.afterAuthReady();
+                this.clickNewVersionModalButton();
             },
         );
         let lastPercent = null;
@@ -423,6 +450,50 @@ class Client extends EventEmitter {
     }
 
     /**
+     * Clicks on new version modal button to close it
+     */
+    async clickNewVersionModalButton() {
+        try {
+            const modalSelector = 'div[data-animate-modal-popup="true"]';
+            const modalExists = await this.pupPage
+                .waitForSelector(modalSelector, {
+                    timeout: 30000,
+                    visible: true,
+                })
+                .then(() => true)
+                .catch(() => false);
+            if (!modalExists) {
+                return;
+            }
+            const buttonSelector = `${modalSelector} button div:not(:empty)`;
+            const buttonText = [
+                'Продолжить',
+                'Continue',
+                'Continuar',
+                'Continuare',
+                'Continuez',
+                'Продовжити',
+            ];
+            await this.pupPage.evaluate(
+                (selector, buttonText) => {
+                    const elements = document.querySelectorAll(selector);
+                    for (const element of elements) {
+                        const text = element.textContent.trim();
+                        if (buttonText.includes(text)) {
+                            element.click();
+                            return;
+                        }
+                    }
+                },
+                buttonSelector,
+                buttonText,
+            );
+        } catch (error) {
+            console.error('Error clicking new version modal button:', error);
+        }
+    }
+
+    /**
      * Sets up events and requirements, kicks off authentication request
      */
     async initialize() {
@@ -457,6 +528,15 @@ class Client extends EventEmitter {
             }
             // navigator.webdriver fix
             browserArgs.push('--disable-blink-features=AutomationControlled');
+
+            if (this.options.stealth) {
+                const stealth = StealthPlugin();
+                stealth.enabledEvasions.delete('iframe.contentWindow');
+                stealth.enabledEvasions.delete('media.codecs');
+                stealth.enabledEvasions.delete('user-agent-override');
+                puppeteer.use(stealth);
+                puppeteer.use(AdblockerPlugin({ blockTrackers: true }));
+            }
 
             browser = await puppeteer.launch({
                 ...puppeteerOpts,

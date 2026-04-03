@@ -714,6 +714,11 @@ declare namespace WAWebJS {
         webVersion?: string;
         /**  Determines how to retrieve the WhatsApp Web version specified in options.webVersion. */
         webVersionCache?: WebCacheOptions;
+        /**
+         * Enable the stealth version of wwebjs, uses puppeteer-stealth and adblocker
+         * @default false
+         */
+        stealth?: boolean;
         /** How many times should the qrcode be refreshed before giving up
          * @default 0 (disabled) */
         qrMaxRetries?: number;
@@ -1025,6 +1030,7 @@ declare namespace WAWebJS {
         GROUP_UPDATE = 'group_update',
         QR_RECEIVED = 'qr',
         CODE_RECEIVED = 'code',
+        CODE_FAILED = 'code_failed',
         LOADING_SCREEN = 'loading_screen',
         CALL = 'call',
         DISCONNECTED = 'disconnected',
@@ -1415,7 +1421,7 @@ declare namespace WAWebJS {
          * The custom message secret, can be used as a poll ID
          * @note It has to be a unique vector with a length of 32
          */
-        messageSecret: Array<number> | undefined;
+        messageSecret?: Array<number>;
     }
 
     /** Represents a Poll on WhatsApp */
@@ -1453,7 +1459,7 @@ declare namespace WAWebJS {
          * The custom message secret, can be used as an event ID
          * @note It has to be a unique vector with a length of 32
          */
-        messageSecret: Array<number> | undefined;
+        messageSecret?: Array<number>;
     }
 
     /** Represents a ScheduledEvent on WhatsApp */
