@@ -1039,8 +1039,18 @@ exports.LoadUtils = () => {
         const wid = window
             .require('WAWebWidFactory')
             .createWidFromWidLike(contact.id);
-        if (wid.isLid() && contact.phoneNumber) {
-            res.id = contact.phoneNumber;
+        if (wid.isLid()) {
+            try {
+                let phoneWid =
+                    contact.phoneNumber ||
+                    window.require('WAWebApiContact').getPhoneNumber(wid);
+                if (phoneWid) {
+                    res.id = phoneWid;
+                    res.userid = phoneWid.user;
+                }
+            } catch (e) {
+                // LID phone resolution failed, keep original values
+            }
         }
 
         res.isBusiness =
