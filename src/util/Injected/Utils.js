@@ -1036,6 +1036,18 @@ exports.LoadUtils = () => {
     window.WWebJS.getContactModel = (contact) => {
         let res = contact.serialize();
 
+        // Legacy: use ContactGetters.getUserid (old Store.ContactMethods approach)
+        try {
+            const ContactGetters = {
+                ...window.require('WAWebContactGetters'),
+                ...window.require('WAWebFrontendContactGetters'),
+            };
+            res.userid = ContactGetters.getUserid(contact);
+        } catch (e) {
+            // Legacy getUserid unavailable, fall through to new approach
+        }
+
+        // New: resolve via WID/LID phone resolution
         const wid = window
             .require('WAWebWidFactory')
             .createWidFromWidLike(contact.id);
@@ -1046,7 +1058,9 @@ exports.LoadUtils = () => {
                     window.require('WAWebApiContact').getPhoneNumber(wid);
                 if (phoneWid) {
                     res.id = phoneWid;
-                    res.userid = phoneWid.user;
+                    if (!res.userid || String(res.userid).includes('@lid')) {
+                        res.userid = phoneWid.user;
+                    }
                 }
             } catch (e) {
                 // LID phone resolution failed, keep original values
