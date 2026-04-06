@@ -1036,31 +1036,17 @@ exports.LoadUtils = () => {
     window.WWebJS.getContactModel = (contact) => {
         let res = contact.serialize();
 
-        // Legacy: use ContactGetters.getUserid (old Store.ContactMethods approach)
-        try {
-            const ContactGetters = {
-                ...window.require('WAWebContactGetters'),
-                ...window.require('WAWebFrontendContactGetters'),
-            };
-            res.userid = ContactGetters.getUserid(contact);
-        } catch (e) {
-            // Legacy getUserid unavailable, fall through to new approach
-        }
-
-        // New: resolve via WID/LID phone resolution
+        let resolvedPhoneWid = null;
         const wid = window
             .require('WAWebWidFactory')
             .createWidFromWidLike(contact.id);
         if (wid.isLid()) {
             try {
-                let phoneWid =
+                resolvedPhoneWid =
                     contact.phoneNumber ||
                     window.require('WAWebApiContact').getPhoneNumber(wid);
-                if (phoneWid) {
-                    res.id = phoneWid;
-                    if (!res.userid || String(res.userid).includes('@lid')) {
-                        res.userid = phoneWid.user;
-                    }
+                if (resolvedPhoneWid) {
+                    res.id = resolvedPhoneWid;
                 }
             } catch (e) {
                 // LID phone resolution failed, keep original values
@@ -1096,6 +1082,13 @@ exports.LoadUtils = () => {
         res.isGroup = ContactMethods.getIsGroup(contact);
         res.isWAContact = ContactMethods.getIsWAContact(contact);
         res.userid = ContactMethods.getUserid(contact);
+
+        // getUserid returns LID user portion on migrated accounts,
+        // override with resolved phone number
+        if (resolvedPhoneWid?.user) {
+            res.userid = resolvedPhoneWid.user;
+        }
+
         res.verifiedName = ContactMethods.getVerifiedName(contact);
         res.verifiedLevel = ContactMethods.getVerifiedLevel(contact);
         res.statusMute = ContactMethods.getStatusMute(contact);
