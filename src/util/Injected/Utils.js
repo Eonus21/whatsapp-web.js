@@ -1112,6 +1112,23 @@ exports.LoadUtils = () => {
         const contact = await window
             .require('WAWebCollections')
             .Contact.find(contactWid);
+
+        // Resolve LID to phone number (same as old version, but without mutating store model)
+        if (contact.id?._serialized?.endsWith('@lid')) {
+            try {
+                const phoneWid =
+                    contact.phoneNumber ||
+                    window.require('WAWebApiContact').getPhoneNumber(
+                        window.require('WAWebWidFactory').createWidFromWidLike(contact.id)
+                    );
+                if (phoneWid) {
+                    contact.id = phoneWid;
+                }
+            } catch (e) {
+                // LID phone resolution failed
+            }
+        }
+
         if (contact.isBusiness || contact.isEnterprise) {
             const bizProfile = await window
                 .require('WAWebCollections')
@@ -1121,23 +1138,25 @@ exports.LoadUtils = () => {
         return window.WWebJS.getContactModel(contact);
     };
 
-    window.WWebJS.getContacts = () => {
+    window.WWebJS.getContacts = async () => {
         const contacts = window
             .require('WAWebCollections')
             .Contact.getModelsArray();
-        return contacts.map(async (contact) => {
-            if (contact.isBusiness || contact.isEnterprise) {
-                const contactWid = window
-                    .require('WAWebWidFactory')
-                    .createWid(contact.id);
-                const bizProfile = await window
-                    .require('WAWebCollections')
-                    .BusinessProfile.find(contactWid);
-                bizProfile.profileOptions &&
-                    (contact.businessProfile = bizProfile);
-            }
-            return window.WWebJS.getContactModel(contact);
-        });
+        return await Promise.all(
+            contacts.map(async (contact) => {
+                if (contact.isBusiness || contact.isEnterprise) {
+                    const contactWid = window
+                        .require('WAWebWidFactory')
+                        .createWid(contact.id);
+                    const bizProfile = await window
+                        .require('WAWebCollections')
+                        .BusinessProfile.find(contactWid);
+                    bizProfile.profileOptions &&
+                        (contact.businessProfile = bizProfile);
+                }
+                return window.WWebJS.getContactModel(contact);
+            }),
+        );
     };
 
     window.WWebJS.mediaInfoToFile = ({ data, mimetype, filename }) => {
