@@ -424,6 +424,8 @@ class Client extends EventEmitter {
             },
         );
         await this.pupPage.evaluate(() => {
+            if (window.__wwebjs_inject_listeners_attached) return;
+            window.__wwebjs_inject_listeners_attached = true;
             window
                 .require('WAWebSocketModel')
                 .Socket.on('change:state', (_AppState, state) => {
@@ -1097,6 +1099,9 @@ class Client extends EventEmitter {
         );
 
         await this.pupPage.evaluate(() => {
+            if (window.__wwebjs_event_listeners_attached) return;
+            window.__wwebjs_event_listeners_attached = true;
+
             const { Msg, Chat, WAWebCallCollection } =
                 window.require('WAWebCollections');
             const AppState = window.require('WAWebSocketModel').Socket;
@@ -1335,12 +1340,22 @@ class Client extends EventEmitter {
      * Closes the client
      */
     async destroy() {
+        this.removeAllListeners();
+        if (this.pupPage) {
+            this.pupPage.removeAllListeners();
+        }
         const browser = this.pupBrowser;
         const isConnected = browser?.isConnected?.();
         if (isConnected) {
+            if (this.pupBrowser) {
+                this.pupBrowser.removeAllListeners();
+            }
             await browser.close();
         }
         await this.authStrategy.destroy();
+        this.currentIndexHtml = null;
+        this.pupPage = null;
+        this.pupBrowser = null;
     }
 
     /**
