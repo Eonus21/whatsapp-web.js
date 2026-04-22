@@ -338,12 +338,19 @@ class Client extends EventEmitter {
 
                     await new Promise((r) => setTimeout(r, 10000)); // Avoid error "Dropping db read operation due to logout"
                     await this.pupPage.evaluate(async () => {
-                        const targetABFlag = 'wa_web_disable_prefetch_loadables';
-                        const ABPrefetchLoadablesExists = !!(await window.require('WAWebABPropsConfigs').ABPropConfigs[targetABFlag]);
+                        const targetABFlag =
+                            'wa_web_disable_prefetch_loadables';
+                        const ABPrefetchLoadablesExists =
+                            !!(await window.require('WAWebABPropsConfigs')
+                                .ABPropConfigs[targetABFlag]);
                         if (ABPrefetchLoadablesExists) {
-                            const isUsingABPrefetchLoadables = await window.require('WAWebABProps').getABPropConfigValue(targetABFlag);
+                            const isUsingABPrefetchLoadables = await window
+                                .require('WAWebABProps')
+                                .getABPropConfigValue(targetABFlag);
                             if (isUsingABPrefetchLoadables) {
-                                await window.require('WAWebPrefetchLoadables')();
+                                await window.require(
+                                    'WAWebPrefetchLoadables',
+                                )();
                             }
                         }
                     });
@@ -534,7 +541,6 @@ class Client extends EventEmitter {
             if (this.options.stealth) {
                 const stealth = StealthPlugin();
                 stealth.enabledEvasions.delete('iframe.contentWindow');
-                stealth.enabledEvasions.delete('media.codecs');
                 stealth.enabledEvasions.delete('user-agent-override');
                 puppeteer.use(stealth);
                 puppeteer.use(AdblockerPlugin({ blockTrackers: true }));
@@ -557,6 +563,31 @@ class Client extends EventEmitter {
 
         this.pupBrowser = browser;
         this.pupPage = page;
+
+        if (puppeteerOpts.defaultViewport || puppeteerOpts.fingerprintOverrides) {
+            const session = await page.target().createCDPSession();
+            if (puppeteerOpts.defaultViewport) {
+                const { width, height } = puppeteerOpts.defaultViewport;
+                await session.send('Browser.setWindowBounds', {
+                    windowId: (await session.send('Browser.getWindowForTarget')).windowId,
+                    bounds: { width, height },
+                }).catch(() => {});
+            }
+            if (puppeteerOpts.fingerprintOverrides) {
+                const fp = puppeteerOpts.fingerprintOverrides;
+                if (fp.locale) {
+                    await session.send('Emulation.setLocaleOverride', {
+                        locale: fp.locale,
+                    }).catch(() => {});
+                }
+                if (fp.timezone) {
+                    await session.send('Emulation.setTimezoneOverride', {
+                        timezoneId: fp.timezone,
+                    }).catch(() => {});
+                }
+            }
+            await session.detach().catch(() => {});
+        }
 
         await this.authStrategy.afterBrowserInitialized();
         await this.initWebVersionCache();
