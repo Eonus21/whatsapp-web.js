@@ -442,11 +442,16 @@ class Client extends EventEmitter {
                 .Socket.on('change:state', (_AppState, state) => {
                     window.onAuthAppStateChangedEvent(state);
                 });
-            window
-                .require('WAWebSocketModel')
-                .Socket.on('change:hasSynced', () => {
-                    window.onAppStateHasSyncedEvent();
-                });
+            const _syncSocket = window.require('WAWebSocketModel').Socket;
+            _syncSocket.on('change:hasSynced', () => {
+                window.onAppStateHasSyncedEvent();
+            });
+            if (
+                _syncSocket.hasSynced === true &&
+                typeof window.WWebJS === 'undefined'
+            ) {
+                window.onAppStateHasSyncedEvent();
+            }
             const Cmd = window.require('WAWebCmd').Cmd;
             Cmd.on('offline_progress_update_from_bridge', () => {
                 window.onOfflineProgressUpdateEvent(
