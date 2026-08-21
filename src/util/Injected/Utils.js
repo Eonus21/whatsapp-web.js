@@ -836,11 +836,39 @@ exports.LoadUtils = () => {
             });
         }
 
-        // WhatsApp Web changed _serialized to $1 in message IDs (2026-07 update).
-        // Normalize here so all downstream Node.js code can keep using _serialized.
-        if (msg.id && msg.id._serialized == null && msg.id.$1 != null) {
-            msg.id = Object.assign({}, msg.id, { _serialized: msg.id.$1 });
-        }
+        // WhatsApp Web renamed id._serialized -> id.$1 (2026-07 update) and, on
+        // LID-migrated accounts, the serialized string and the remote wid get
+        // read from different fields ($1 vs remote.$1) that can disagree. Since
+        // media download / revoke / star rebuild their lookup keys from the
+        // remote we expose downstream, reconstruct _serialized from that same
+        // remote so every MsgKey is self-consistent. For non-LID accounts this
+        // reproduces WhatsApp's canonical `fromMe_remote_id[_participant]`
+        // string verbatim, so it is a no-op there.
+        const rebuildKeySerialized = (key) => {
+            if (!key || typeof key !== 'object') return;
+            const remote =
+                typeof key.remote === 'object'
+                    ? key.remote._serialized || key.remote.$1
+                    : key.remote;
+            if (key.id == null || key.fromMe == null || remote == null) {
+                if (key._serialized == null && key.$1 != null) {
+                    key._serialized = key.$1;
+                }
+                return;
+            }
+            const participant =
+                key.participant && typeof key.participant === 'object'
+                    ? key.participant._serialized || key.participant.$1
+                    : key.participant;
+            key._serialized = `${key.fromMe}_${remote}_${key.id}${
+                participant ? '_' + participant : ''
+            }`;
+        };
+
+        rebuildKeySerialized(msg.id);
+        rebuildKeySerialized(msg.msgKey);
+        rebuildKeySerialized(msg.reactionParentKey);
+        rebuildKeySerialized(msg.parentMsgKey);
 
         delete msg.pendingAckUpdate;
 
