@@ -483,6 +483,15 @@ exports.LoadUtils = () => {
             ...extraOptions,
         };
 
+        // WhatsApp Web (2026-09 update) has processMediaData return a MediaData
+        // model whose enumerable __x_id property, once spread into the message
+        // above via ...mediaOptions, overwrites the real MsgKey set on `id`.
+        // Msg.initialize -> getValidatedSender() then resolves the sender from
+        // the bogus id and throws "Data passed to getter must include an id
+        // property (it's how we memoize) but got undefined". Media-only; plain
+        // text is unaffected. Drop it before the model is built. (upstream #201923)
+        delete message.__x_id;
+
         // Bot's won't reply if canonicalUrl is set (linking)
         if (botOptions) {
             delete message.canonicalUrl;
@@ -945,7 +954,7 @@ exports.LoadUtils = () => {
                                 .catch(() => null)
                         )?.chat;
                     }
-                } catch (e) {
+                } catch (ignoredError) {
                     // LID resolution failed, chat remains undefined
                 }
             }
@@ -1102,7 +1111,7 @@ exports.LoadUtils = () => {
                 if (resolvedPhoneWid) {
                     res.id = resolvedPhoneWid;
                 }
-            } catch (e) {
+            } catch (ignoredError) {
                 // LID phone resolution failed, keep original values
             }
         }
@@ -1168,13 +1177,17 @@ exports.LoadUtils = () => {
             try {
                 const phoneWid =
                     contact.phoneNumber ||
-                    window.require('WAWebApiContact').getPhoneNumber(
-                        window.require('WAWebWidFactory').createWidFromWidLike(contact.id)
-                    );
+                    window
+                        .require('WAWebApiContact')
+                        .getPhoneNumber(
+                            window
+                                .require('WAWebWidFactory')
+                                .createWidFromWidLike(contact.id),
+                        );
                 if (phoneWid) {
                     contact.id = phoneWid;
                 }
-            } catch (e) {
+            } catch (ignoredError) {
                 // LID phone resolution failed
             }
         }
