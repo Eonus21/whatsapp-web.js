@@ -516,6 +516,10 @@ class Message extends Base {
     async downloadMedia() {
         if (!this.hasMedia) return undefined;
 
+        // Dual-compat: prefer `_serialized` (legacy), fall back to `$1` (newer WA Web).
+        const msgId = this.id?._serialized ?? this.id?.$1;
+        if (!msgId) return undefined;
+
         const result = await this.client.pupPage.evaluate(async (msgId) => {
             const resolved = await window.WWebJS.resolveMediaBlob(msgId);
             if (!resolved) return null;
@@ -529,7 +533,7 @@ class Message extends Base {
                 filename: resolved.filename,
                 filesize: resolved.filesize,
             };
-        }, this.id._serialized);
+        }, msgId);
 
         if (!result) return undefined;
         return new MessageMedia(
@@ -549,12 +553,15 @@ class Message extends Base {
     async downloadMediaStream({ chunkSize = 10 * 1024 * 1024 } = {}) {
         if (!this.hasMedia) return undefined;
 
+        const msgId = this.id?._serialized ?? this.id?.$1;
+        if (!msgId) return undefined;
+
         const blobHandle = await this.client.pupPage.evaluateHandle(
             async (msgId) => {
                 const result = await window.WWebJS.resolveMediaBlob(msgId);
                 return result?.blob ?? null;
             },
-            this.id._serialized,
+            msgId,
         );
 
         let metadata;
@@ -568,7 +575,7 @@ class Message extends Base {
                     filename: msg?.filename,
                     filesize: msg?.size,
                 };
-            }, this.id._serialized);
+            }, msgId);
         } catch (err) {
             await blobHandle.dispose().catch(() => {});
             throw err;
