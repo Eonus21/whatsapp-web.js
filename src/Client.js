@@ -38,6 +38,21 @@ const {
 const NoAuth = require('./authStrategies/NoAuth');
 const { exposeFunctionIfAbsent } = require('./util/Puppeteer');
 
+// puppeteer-extra is a process-wide singleton and use() only appends, so
+// registering per initialize() piled up one Stealth + one Adblocker (with its
+// own filter engine) on every client start/restart, and every new page got
+// one set of request handlers per accumulated adblocker.
+let stealthPluginsRegistered = false;
+function registerStealthPluginsOnce() {
+    if (stealthPluginsRegistered) return;
+    stealthPluginsRegistered = true;
+    const stealth = StealthPlugin();
+    stealth.enabledEvasions.delete('iframe.contentWindow');
+    stealth.enabledEvasions.delete('user-agent-override');
+    puppeteer.use(stealth);
+    puppeteer.use(AdblockerPlugin({ blockTrackers: true }));
+}
+
 /**
  * Starting point for interacting with the WhatsApp Web API
  * @extends {EventEmitter}
@@ -600,11 +615,7 @@ class Client extends EventEmitter {
             browserArgs.push('--disable-blink-features=AutomationControlled');
 
             if (this.options.stealth) {
-                const stealth = StealthPlugin();
-                stealth.enabledEvasions.delete('iframe.contentWindow');
-                stealth.enabledEvasions.delete('user-agent-override');
-                puppeteer.use(stealth);
-                puppeteer.use(AdblockerPlugin({ blockTrackers: true }));
+                registerStealthPluginsOnce();
             }
 
             browser = await puppeteer.launch({
@@ -986,6 +997,9 @@ class Client extends EventEmitter {
             this.pupPage,
             'onChatUnreadCountEvent',
             async (data) => {
+                // getChatById runs groupMetadata.update (a server query) and
+                // serializes all participants — skip it when nobody listens.
+                if (this.listenerCount(Events.UNREAD_COUNT) === 0) return;
                 const chat = await this.getChatById(data.id);
 
                 /**
@@ -1032,12 +1046,16 @@ class Client extends EventEmitter {
                     ACCEPTED_STATES.push(WAState.CONFLICT);
 
                     if (state === WAState.CONFLICT) {
-                        setTimeout(() => {
-                            this.pupPage.evaluate(() =>
-                                window
-                                    .require('WAWebSocketModel')
-                                    .Socket.takeover(),
-                            );
+                        clearTimeout(this._takeoverTimer);
+                        this._takeoverTimer = setTimeout(() => {
+                            this._takeoverTimer = null;
+                            this.pupPage
+                                ?.evaluate(() =>
+                                    window
+                                        .require('WAWebSocketModel')
+                                        .Socket.takeover(),
+                                )
+                                .catch(() => {});
                         }, this.options.takeoverTimeoutMs);
                     }
                 }
@@ -1232,6 +1250,14 @@ class Client extends EventEmitter {
             gatingUtils.isPlaceholderMessageResendEnabled = () => true;
 
             Msg.on('change', (msg) => {
+                // Backbone fires 'change' after every change:* (acks
+                // included); the Node handler only acts on phone-number
+                // change notifications, so don't serialize anything else.
+                const isNumberChange =
+                    (msg.type === 'gp2' && msg.subtype === 'modify') ||
+                    (msg.type === 'notification_template' &&
+                        msg.subtype === 'change_number');
+                if (!isNumberChange) return;
                 window.onChangeMessageEvent(window.WWebJS.getMessageModel(msg));
             });
             Msg.on('change:type', (msg) => {
@@ -1366,7 +1392,11 @@ class Client extends EventEmitter {
                 });
             });
             Chat.on('change:unreadCount', (chat) => {
-                window.onChatUnreadCountEvent(chat);
+                // Only the id is used Node-side; sending the raw Chat model
+                // JSON-serialized the whole Backbone model on every message.
+                window.onChatUnreadCountEvent({
+                    id: window.WWebJS.widSerialized(chat.id),
+                });
             });
 
             window.WWebJS.injectToFunction(
@@ -1487,18 +1517,32 @@ class Client extends EventEmitter {
         if (this.pupPage) {
             this.pupPage.removeAllListeners();
         }
+        clearTimeout(this._takeoverTimer);
+        this._takeoverTimer = null;
         const browser = this.pupBrowser;
-        const isConnected = browser?.isConnected?.();
-        if (isConnected) {
-            if (this.pupBrowser) {
-                this.pupBrowser.removeAllListeners();
+        try {
+            if (browser) {
+                browser.removeAllListeners();
+                // A wedged renderer can make close() hang forever, pinning
+                // this client; a crashed/disconnected browser was never
+                // killed at all. Bound the close, then kill what's left.
+                if (browser.isConnected?.()) {
+                    await Promise.race([
+                        browser.close().catch(() => {}),
+                        new Promise((r) => setTimeout(r, 10000)),
+                    ]);
+                }
+                const proc = browser.process?.();
+                if (proc && proc.exitCode === null && !proc.killed) {
+                    proc.kill('SIGKILL');
+                }
             }
-            await browser.close();
+        } finally {
+            await this.authStrategy.destroy();
+            this.currentIndexHtml = null;
+            this.pupPage = null;
+            this.pupBrowser = null;
         }
-        await this.authStrategy.destroy();
-        this.currentIndexHtml = null;
-        this.pupPage = null;
-        this.pupBrowser = null;
     }
 
     /**
