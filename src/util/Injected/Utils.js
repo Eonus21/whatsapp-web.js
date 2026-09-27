@@ -3,6 +3,34 @@
 exports.LoadUtils = () => {
     window.WWebJS = {};
 
+    // Newer WA Web builds (2.3000.1043xxx+) no longer expose `_serialized` on a
+    // MsgKey; the same string is only reachable through `toString()`. Every
+    // page-side `Msg.get(key._serialized)` then looks messages up by `undefined`.
+    // Restore it as a prototype getter. The setter keeps builds that still assign
+    // `_serialized` in the constructor working: it stores an own property, which
+    // shadows the getter exactly as before. (upstream #201901)
+    try {
+        const MsgKeyProto = window.require('WAWebMsgKey').prototype;
+        if (!Object.getOwnPropertyDescriptor(MsgKeyProto, '_serialized')) {
+            Object.defineProperty(MsgKeyProto, '_serialized', {
+                get() {
+                    return this.toString();
+                },
+                set(value) {
+                    Object.defineProperty(this, '_serialized', {
+                        value,
+                        writable: true,
+                        enumerable: true,
+                        configurable: true,
+                    });
+                },
+                configurable: true,
+            });
+        }
+    } catch (_) {
+        // WAWebMsgKey unavailable on this build — fall back to widSerialized()
+    }
+
     /**
      * Dual-compat serialized id helper.
      * Older WhatsApp Web builds expose WID/MsgKey as `_serialized`.
@@ -537,6 +565,11 @@ exports.LoadUtils = () => {
         // text is unaffected. Drop it before the model is built. (upstream #201923/#201922)
         delete message.__x_id;
 
+        // mediaOptions.toJSON() can also carry its own (undefined) `id` that
+        // overwrites the MsgKey above with the same memoize error. The message
+        // key always wins.
+        message.id = newMsgKey;
+
         // Bot's won't reply if canonicalUrl is set (linking)
         if (botOptions) {
             delete message.canonicalUrl;
@@ -630,13 +663,26 @@ exports.LoadUtils = () => {
         const [msgPromise, sendMsgResultPromise] = window
             .require('WAWebSendMsgChatAction')
             .addAndSendMsgToChat(chat, message);
-        await msgPromise;
+        const msg = await msgPromise;
 
-        if (options.waitUntilMsgSent) await sendMsgResultPromise;
+        if (options.waitUntilMsgSent) {
+            const { SendMsgResult } = window.require(
+                'WAWebSendMsgResultAction',
+            );
+            const result = await sendMsgResultPromise;
+            if (result?.messageSendResult !== SendMsgResult.OK) {
+                throw new Error(
+                    `Message was not sent: ${result?.messageSendResult}`,
+                );
+            }
+        }
 
-        return window
-            .require('WAWebCollections')
-            .Msg.get(newMsgKey._serialized || newMsgKey.$1);
+        return (
+            window
+                .require('WAWebCollections')
+                .Msg.get(window.WWebJS.widSerialized(newMsgKey)) ||
+            (typeof msg?.serialize === 'function' ? msg : undefined)
+        );
     };
 
     window.WWebJS.editMessage = async (msg, content, options = {}) => {
@@ -769,6 +815,33 @@ exports.LoadUtils = () => {
             .require('WAWebPrepRawMedia')
             .prepRawMedia(opaqueData, mediaParams);
         const mediaData = await mediaPrep.waitForPrep();
+
+        // WA's filehash is the base64 SHA-256 of the file. Some WA Web builds
+        // leave it unset after prep for documents; getOrCreateMediaObject then
+        // fails with the opaque "Data passed to getter must include an id
+        // property ... but got undefined". Compute it ourselves in that case.
+        if (!mediaData.filehash) {
+            const digest = await window.crypto.subtle.digest(
+                'SHA-256',
+                await file.arrayBuffer(),
+            );
+            let binary = '';
+            for (const byte of new Uint8Array(digest)) {
+                binary += String.fromCharCode(byte);
+            }
+            const filehash = window.btoa(binary);
+            if (typeof mediaData.set === 'function') {
+                mediaData.set({ filehash });
+            } else {
+                mediaData.filehash = filehash;
+            }
+        }
+        if (!mediaData.filehash) {
+            throw new Error(
+                `media-fault: filehash undefined after prep (type=${mediaData.type}, mimetype=${mediaData.mimetype}, size=${file.size})`,
+            );
+        }
+
         const mediaObject = window
             .require('WAWebMediaStorage')
             .getOrCreateMediaObject(mediaData.filehash);
@@ -777,10 +850,6 @@ exports.LoadUtils = () => {
             isGif: mediaData.isGif,
             isNewsletter: sendToChannel,
         });
-
-        if (!mediaData.filehash) {
-            throw new Error('media-fault: sendToChat filehash undefined');
-        }
 
         if (
             (forceVoice && mediaData.type === 'ptt') ||
@@ -1054,20 +1123,28 @@ exports.LoadUtils = () => {
 
     window.WWebJS.getChats = async () => {
         const chats = window.require('WAWebCollections').Chat.getModelsArray();
-        const chatPromises = chats.map((chat) =>
-            window.WWebJS.getChatModel(chat),
+        const results = await Promise.allSettled(
+            chats.map((chat) => window.WWebJS.getChatModel(chat)),
         );
-        return await Promise.all(chatPromises);
+        // One broken chat (stale/LID group metadata, revoked newsletter) must
+        // not reject the whole list. (upstream #201910/#201934)
+        return results
+            .filter((r) => r.status === 'fulfilled' && r.value)
+            .map((r) => r.value);
     };
 
     window.WWebJS.getChannels = async () => {
         const channels = window
             .require('WAWebCollections')
             .WAWebNewsletterCollection.getModelsArray();
-        const channelPromises = channels?.map((channel) =>
-            window.WWebJS.getChatModel(channel, { isChannel: true }),
+        const results = await Promise.allSettled(
+            (channels || []).map((channel) =>
+                window.WWebJS.getChatModel(channel, { isChannel: true }),
+            ),
         );
-        return await Promise.all(channelPromises);
+        return results
+            .filter((r) => r.status === 'fulfilled' && r.value)
+            .map((r) => r.value);
     };
 
     window.WWebJS.getChatModel = async (chat, { isChannel = false } = {}) => {
@@ -1092,7 +1169,12 @@ exports.LoadUtils = () => {
             const groupMetadata =
                 window.require('WAWebCollections').GroupMetadata ||
                 window.require('WAWebCollections').WAWebGroupMetadataCollection;
-            await groupMetadata.update(chatWid);
+            try {
+                await groupMetadata.update(chatWid);
+            } catch (_) {
+                // LID-based group ids can fail the IndexedDB lookup
+                // (DataError); keep the cached metadata instead.
+            }
             const { toPn } = window.require('WAWebLidMigrationUtils');
             const serializedMetadata = chat.groupMetadata.serialize();
             for (const p of serializedMetadata.participants || []) {
@@ -1313,15 +1395,38 @@ exports.LoadUtils = () => {
         // Always call internal downloadMedia - never skip based on
         // mediaStage, because cache eviction can leave stage=RESOLVED
         // with empty InMemoryMediaBlobCache.
-        await msg.downloadMedia({
-            downloadEvenIfExpensive: true,
-            rmrReason: 1,
-            isUserInitiated: true,
+        // When the file has expired on the server, WhatsApp asks the sender's
+        // phone to upload it again and downloadMedia waits for that reply,
+        // which may never come. Stop waiting once that happens. (upstream #201932)
+        const { mediaData } = msg;
+        const canObserve =
+            typeof mediaData.on === 'function' &&
+            typeof mediaData.off === 'function';
+        let onStageChange;
+        const reuploading = new Promise((resolve) => {
+            if (!canObserve) return;
+            onStageChange = () => {
+                if (mediaData.mediaStage === 'REUPLOADING') resolve();
+            };
+            mediaData.on('change:mediaStage', onStageChange);
         });
+        try {
+            await Promise.race([
+                msg.downloadMedia({
+                    downloadEvenIfExpensive: true,
+                    rmrReason: 1,
+                    isUserInitiated: true,
+                }),
+                reuploading,
+            ]);
+        } finally {
+            if (canObserve) mediaData.off('change:mediaStage', onStageChange);
+        }
 
         if (
             msg.mediaData.mediaStage.includes('ERROR') ||
-            msg.mediaData.mediaStage === 'FETCHING'
+            msg.mediaData.mediaStage === 'FETCHING' ||
+            msg.mediaData.mediaStage === 'REUPLOADING'
         ) {
             return null;
         }
