@@ -382,32 +382,37 @@ class Client extends EventEmitter {
                                 throw 'ready timeout';
                             });
 
-                        /**
-                         * Current connection information
-                         * @type {ClientInfo}
-                         */
-                        this.info = new ClientInfo(
-                            this,
-                            await this.pupPage.evaluate(() => {
-                                return {
-                                    ...window
-                                        .require('WAWebConnModel')
-                                        .Conn.serialize(),
-                                    wid:
-                                        window
-                                            .require('WAWebUserPrefsMeUser')
-                                            .getMaybeMePnUser() ||
-                                        window
-                                            .require('WAWebUserPrefsMeUser')
-                                            .getMaybeMeLidUser(),
-                                };
-                            }),
-                        );
-
                         this.interface = new InterfaceController(this);
 
                         await this.attachEventListeners();
                     }
+
+                    /**
+                     * Current connection information
+                     * @type {ClientInfo}
+                     */
+                    // Set on every sync, not only on first injection: if
+                    // WWebJS was already injected (an earlier attempt failed
+                    // after injecting, or the event fired again), READY used
+                    // to be emitted with this.info undefined.
+                    this.info = new ClientInfo(
+                        this,
+                        await this.pupPage.evaluate(() => {
+                            return {
+                                ...window
+                                    .require('WAWebConnModel')
+                                    .Conn.serialize(),
+                                wid:
+                                    window
+                                        .require('WAWebUserPrefsMeUser')
+                                        .getMaybeMePnUser() ||
+                                    window
+                                        .require('WAWebUserPrefsMeUser')
+                                        .getMaybeMeLidUser(),
+                            };
+                        }),
+                    );
+
                     /**
                      * Emitted when the client has initialized and is ready to receive messages.
                      * @event Client#ready
@@ -1602,7 +1607,7 @@ class Client extends EventEmitter {
      * @property {string} [stickerName=undefined] - Sets the name of the sticker, (if sendMediaAsSticker is true).
      * @property {string[]} [stickerCategories=undefined] - Sets the categories of the sticker, (if sendMediaAsSticker is true). Provide emoji char array, can be null.
      * @property {boolean} [ignoreQuoteErrors = true] - Should the bot send a quoted message without the quoted message if it fails to get the quote?
-     * @property {boolean} [waitUntilMsgSent = false] - Should the bot wait for the message send result?
+     * @property {boolean} [waitUntilMsgSent = false] - Should the bot wait for the message send result? If WhatsApp reports the message as not sent, the promise is rejected
      * @property {MessageMedia} [media] - Media to be sent
      * @property {any} [extra] - Extra options
      */
