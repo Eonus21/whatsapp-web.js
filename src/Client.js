@@ -53,6 +53,63 @@ function registerStealthPluginsOnce() {
     puppeteer.use(AdblockerPlugin({ blockTrackers: true }));
 }
 
+// Serialized into the page. Reports the parsed `stream:error` / `failure`
+// stanza (the real logout/ban cause) before WA Web clears credentials;
+// `logout_from_bridge` does not carry it.
+function installWWebFailureParserHook() {
+    const Parser = window.require('WADeprecatedWapParser');
+    const prototype = (Parser?.default || Parser)?.prototype;
+    if (!prototype || typeof prototype.parse !== 'function') return;
+    if (prototype.__wwjsFailureHookInstalled) return;
+
+    let reasons = {};
+    try {
+        reasons = window.require('WAWebFailureErrorCodes').FAILURE_REASON || {};
+    } catch (ignoredError) {
+        // Raw reason codes are still useful when the enum is unavailable.
+    }
+
+    const originalParse = prototype.parse;
+    prototype.parse = function (stanza) {
+        const result = originalParse.call(this, stanza);
+        const tag = stanza?.tag;
+        if (tag !== 'stream:error' && tag !== 'failure') return result;
+
+        try {
+            const value = result?.success;
+            const failure =
+                tag === 'stream:error'
+                    ? {
+                          kind: 'stream_error',
+                          type: value?.type ?? null,
+                          code: value?.code ?? stanza.attrs?.code ?? null,
+                          conflictType:
+                              stanza.content?.find?.(
+                                  (child) => child?.tag === 'conflict',
+                              )?.attrs?.type ?? null,
+                          codeName:
+                              { 515: 'restart_login', 516: 'start_logout' }[
+                                  value?.code
+                              ] ?? null,
+                      }
+                    : {
+                          kind: 'failure',
+                          reason: value?.reason ?? null,
+                          reasonName:
+                              Object.keys(reasons).find(
+                                  (name) => reasons[name] === value?.reason,
+                              ) ?? null,
+                          code: value?.code ?? null,
+                      };
+            window.onWWebConnectionFailure?.(failure)?.catch?.(() => {});
+        } catch (ignoredError) {
+            // Diagnostics must never change WhatsApp Web's parser behavior.
+        }
+        return result;
+    };
+    prototype.__wwjsFailureHookInstalled = true;
+}
+
 /**
  * Starting point for interacting with the WhatsApp Web API
  * @extends {EventEmitter}
@@ -155,6 +212,26 @@ class Client extends EventEmitter {
                     throw 'auth timeout';
                 });
             if (abort.signal.aborted) return;
+
+            try {
+                await exposeFunctionIfAbsent(
+                    this.pupPage,
+                    'onWWebConnectionFailure',
+                    (failure) => {
+                        /**
+                         * Emitted when WA Web parses a stream:error / failure stanza
+                         * (logout, device removed, ban, restart-login).
+                         * @event Client#wa_connection_failure
+                         * @param {object} failure
+                         */
+                        this.emit(Events.WA_CONNECTION_FAILURE, failure);
+                    },
+                );
+                await this.pupPage.evaluate(installWWebFailureParserHook);
+            } catch (ignoredError) {
+                // Telemetry is best effort and must not interrupt authentication.
+            }
+
             await this.setDeviceName(
                 this.options.deviceName,
                 this.options.browserName,

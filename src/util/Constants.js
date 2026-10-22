@@ -71,6 +71,7 @@ exports.Events = {
     CODE_FAILED: 'code_failed',
     LOADING_SCREEN: 'loading_screen',
     DISCONNECTED: 'disconnected',
+    WA_CONNECTION_FAILURE: 'wa_connection_failure',
     STATE_CHANGED: 'change_state',
     BATTERY_CHANGED: 'change_battery',
     INCOMING_CALL: 'call',

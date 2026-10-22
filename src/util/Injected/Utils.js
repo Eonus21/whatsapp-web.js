@@ -1255,13 +1255,19 @@ exports.LoadUtils = () => {
 
         res.isBlocked = contact.isContactBlocked;
         if (!res.isBlocked) {
-            const alt = window
-                .require('WAWebApiContact')
-                .getAlternateUserWid(wid);
-            if (alt) {
-                res.isBlocked = !!window
-                    .require('WAWebCollections')
-                    .Blocklist.get(alt);
+            // WA Web 2.3000.1049+ throws "Invalid get call using deviceWid" for
+            // some wids; one throw would reject the whole getContacts() map.
+            try {
+                const alt = window
+                    .require('WAWebApiContact')
+                    .getAlternateUserWid(wid);
+                if (alt) {
+                    res.isBlocked = !!window
+                        .require('WAWebCollections')
+                        .Blocklist.get(alt);
+                }
+            } catch {
+                res.isBlocked = false;
             }
         }
 
@@ -1467,6 +1473,7 @@ exports.LoadUtils = () => {
                         mediaKey: msg.mediaKey,
                         mediaKeyTimestamp: msg.mediaKeyTimestamp,
                         type: msg.type,
+                        mimetype: msg.mimetype,
                         signal: new AbortController().signal,
                         downloadQpl: mockQpl,
                     });
