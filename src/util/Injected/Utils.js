@@ -27,7 +27,7 @@ exports.LoadUtils = () => {
                 configurable: true,
             });
         }
-    } catch (_) {
+    } catch (ignoredError) {
         // WAWebMsgKey unavailable on this build — fall back to widSerialized()
     }
 
@@ -1171,7 +1171,7 @@ exports.LoadUtils = () => {
                 window.require('WAWebCollections').WAWebGroupMetadataCollection;
             try {
                 await groupMetadata.update(chatWid);
-            } catch (_) {
+            } catch (ignoredError) {
                 // LID-based group ids can fail the IndexedDB lookup
                 // (DataError); keep the cached metadata instead.
             }
@@ -1213,7 +1213,7 @@ exports.LoadUtils = () => {
                 lastMessage &&
                     (model.lastMessage =
                         window.WWebJS.getMessageModel(lastMessage));
-            } catch (_) {
+            } catch (ignoredError) {
                 // Key-format changes must not break the entire chat model
                 model.lastMessage = null;
             }
@@ -1255,13 +1255,19 @@ exports.LoadUtils = () => {
 
         res.isBlocked = contact.isContactBlocked;
         if (!res.isBlocked) {
-            const alt = window
-                .require('WAWebApiContact')
-                .getAlternateUserWid(wid);
-            if (alt) {
-                res.isBlocked = !!window
-                    .require('WAWebCollections')
-                    .Blocklist.get(alt);
+            // WA Web 2.3000.1049+ throws "Invalid get call using deviceWid" for
+            // some wids; one throw would reject the whole getContacts() map.
+            try {
+                const alt = window
+                    .require('WAWebApiContact')
+                    .getAlternateUserWid(wid);
+                if (alt) {
+                    res.isBlocked = !!window
+                        .require('WAWebCollections')
+                        .Blocklist.get(alt);
+                }
+            } catch {
+                res.isBlocked = false;
             }
         }
 
@@ -1467,6 +1473,7 @@ exports.LoadUtils = () => {
                         mediaKey: msg.mediaKey,
                         mediaKeyTimestamp: msg.mediaKeyTimestamp,
                         type: msg.type,
+                        mimetype: msg.mimetype,
                         signal: new AbortController().signal,
                         downloadQpl: mockQpl,
                     });
