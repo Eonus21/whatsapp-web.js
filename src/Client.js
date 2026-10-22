@@ -713,26 +713,37 @@ class Client extends EventEmitter {
         this.pupBrowser = browser;
         this.pupPage = page;
 
-        if (puppeteerOpts.defaultViewport || puppeteerOpts.fingerprintOverrides) {
+        if (
+            puppeteerOpts.defaultViewport ||
+            puppeteerOpts.fingerprintOverrides
+        ) {
             const session = await page.target().createCDPSession();
             if (puppeteerOpts.defaultViewport) {
                 const { width, height } = puppeteerOpts.defaultViewport;
-                await session.send('Browser.setWindowBounds', {
-                    windowId: (await session.send('Browser.getWindowForTarget')).windowId,
-                    bounds: { width, height },
-                }).catch(() => {});
+                await session
+                    .send('Browser.setWindowBounds', {
+                        windowId: (
+                            await session.send('Browser.getWindowForTarget')
+                        ).windowId,
+                        bounds: { width, height },
+                    })
+                    .catch(() => {});
             }
             if (puppeteerOpts.fingerprintOverrides) {
                 const fp = puppeteerOpts.fingerprintOverrides;
                 if (fp.locale) {
-                    await session.send('Emulation.setLocaleOverride', {
-                        locale: fp.locale,
-                    }).catch(() => {});
+                    await session
+                        .send('Emulation.setLocaleOverride', {
+                            locale: fp.locale,
+                        })
+                        .catch(() => {});
                 }
                 if (fp.timezone) {
-                    await session.send('Emulation.setTimezoneOverride', {
-                        timezoneId: fp.timezone,
-                    }).catch(() => {});
+                    await session
+                        .send('Emulation.setTimezoneOverride', {
+                            timezoneId: fp.timezone,
+                        })
+                        .catch(() => {});
                 }
             }
             await session.detach().catch(() => {});
@@ -851,7 +862,7 @@ class Client extends EventEmitter {
                 showNotification,
                 intervalMs,
             );
-        } catch (error) {
+        } catch (ignoredError) {
             /**
              * Emitted when the pairing code request fails
              * @event Client#code_failed

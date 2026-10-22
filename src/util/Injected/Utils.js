@@ -27,7 +27,7 @@ exports.LoadUtils = () => {
                 configurable: true,
             });
         }
-    } catch (_) {
+    } catch (ignoredError) {
         // WAWebMsgKey unavailable on this build — fall back to widSerialized()
     }
 
@@ -1171,7 +1171,7 @@ exports.LoadUtils = () => {
                 window.require('WAWebCollections').WAWebGroupMetadataCollection;
             try {
                 await groupMetadata.update(chatWid);
-            } catch (_) {
+            } catch (ignoredError) {
                 // LID-based group ids can fail the IndexedDB lookup
                 // (DataError); keep the cached metadata instead.
             }
@@ -1213,7 +1213,7 @@ exports.LoadUtils = () => {
                 lastMessage &&
                     (model.lastMessage =
                         window.WWebJS.getMessageModel(lastMessage));
-            } catch (_) {
+            } catch (ignoredError) {
                 // Key-format changes must not break the entire chat model
                 model.lastMessage = null;
             }
