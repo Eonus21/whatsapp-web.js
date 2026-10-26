@@ -100,6 +100,9 @@ function installWWebFailureParserHook() {
                                   (name) => reasons[name] === value?.reason,
                               ) ?? null,
                           code: value?.code ?? null,
+                          // 402 TEMP_BANNED: segundos hasta que se levanta
+                          expire: stanza.attrs?.expire ?? null,
+                          attrs: stanza.attrs ?? null,
                       };
             window.onWWebConnectionFailure?.(failure)?.catch?.(() => {});
         } catch (ignoredError) {
