@@ -48,6 +48,15 @@ describe('WhatsApp Web connection failure telemetry', function () {
         global.window = pageWindow;
         try {
             const parser = new Parser();
+            const notification = {
+                tag: 'notification',
+                attrs: { type: 'account_sync', t: 1793180000 },
+                content: [{ tag: 'devices', attrs: { dhash: 'x' } }],
+                parsed: {},
+            };
+            assert.deepEqual(parser.parse(notification), { success: {} });
+            parser.parse(notification);
+            parser.parse({ tag: 'ib', content: new Uint8Array(2), parsed: {} });
             const removed = {
                 tag: 'stream:error',
                 attrs: { code: '401' },
@@ -74,13 +83,44 @@ describe('WhatsApp Web connection failure telemetry', function () {
         } finally {
             global.window = previousWindow;
         }
-        assert.deepEqual(failures, [
+        const recent = [
+            {
+                tag: 'notification',
+                attrs: { type: 'account_sync', t: '1793180000' },
+                children: [
+                    { tag: 'devices', attrs: { dhash: 'x' }, children: null },
+                ],
+            },
+            { tag: 'ib', attrs: null, children: null },
+        ];
+        assert.equal(typeof failures[0].recent[0].at, 'number');
+        const withoutTimes = failures.map((failure) => ({
+            ...failure,
+            recent: failure.recent.map((stanza) => {
+                const copy = { ...stanza };
+                delete copy.at;
+                return copy;
+            }),
+        }));
+        assert.deepEqual(withoutTimes, [
             {
                 kind: 'stream_error',
                 type: 'device_removed',
                 code: '401',
                 conflictType: 'device_removed',
                 codeName: null,
+                stanza: {
+                    tag: 'stream:error',
+                    attrs: { code: '401' },
+                    children: [
+                        {
+                            tag: 'conflict',
+                            attrs: { type: 'device_removed' },
+                            children: null,
+                        },
+                    ],
+                },
+                recent,
             },
             {
                 kind: 'failure',
@@ -89,6 +129,8 @@ describe('WhatsApp Web connection failure telemetry', function () {
                 code: 7,
                 expire: null,
                 attrs: null,
+                stanza: { tag: 'failure', attrs: null, children: null },
+                recent,
             },
             {
                 kind: 'failure',
@@ -97,6 +139,8 @@ describe('WhatsApp Web connection failure telemetry', function () {
                 code: null,
                 expire: null,
                 attrs: null,
+                stanza: { tag: 'failure', attrs: null, children: null },
+                recent,
             },
             {
                 kind: 'failure',
@@ -105,6 +149,12 @@ describe('WhatsApp Web connection failure telemetry', function () {
                 code: 104,
                 expire: '86400',
                 attrs: { reason: '402', code: '104', expire: '86400' },
+                stanza: {
+                    tag: 'failure',
+                    attrs: { reason: '402', code: '104', expire: '86400' },
+                    children: null,
+                },
+                recent,
             },
             {
                 kind: 'stream_error',
@@ -112,6 +162,8 @@ describe('WhatsApp Web connection failure telemetry', function () {
                 code: 516,
                 conflictType: null,
                 codeName: 'start_logout',
+                stanza: { tag: 'stream:error', attrs: null, children: null },
+                recent,
             },
         ]);
     });

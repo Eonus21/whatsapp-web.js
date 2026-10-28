@@ -69,10 +69,49 @@ function installWWebFailureParserHook() {
         // Raw reason codes are still useful when the enum is unavailable.
     }
 
+    // Shallow view of a stanza: device_removed and similar stream errors can
+    // carry attrs or child nodes the parsed result drops.
+    const describeNode = (node, depth = 2) => ({
+        tag: node.tag,
+        attrs: node.attrs
+            ? Object.fromEntries(
+                  Object.entries(node.attrs).map(([key, value]) => [
+                      key,
+                      String(value),
+                  ]),
+              )
+            : null,
+        children:
+            depth > 0 && Array.isArray(node.content)
+                ? node.content
+                      .filter((child) => child?.tag)
+                      .slice(0, 20)
+                      .map((child) => describeNode(child, depth - 1))
+                : null,
+    });
+
+    // WhatsApp may announce a restriction just before dropping the device,
+    // so the last ib/notification stanzas travel with the failure.
+    const recent = [];
+    let lastRecentStanza = null;
+
     const originalParse = prototype.parse;
     prototype.parse = function (stanza) {
         const result = originalParse.call(this, stanza);
         const tag = stanza?.tag;
+        if (tag === 'ib' || tag === 'notification') {
+            try {
+                // Several parsers may try the same stanza
+                if (stanza !== lastRecentStanza) {
+                    lastRecentStanza = stanza;
+                    recent.push({ at: Date.now(), ...describeNode(stanza) });
+                    if (recent.length > 10) recent.shift();
+                }
+            } catch (ignoredError) {
+                // Diagnostics must never change WhatsApp Web's parser behavior.
+            }
+            return result;
+        }
         if (tag !== 'stream:error' && tag !== 'failure') return result;
 
         try {
@@ -91,6 +130,8 @@ function installWWebFailureParserHook() {
                               { 515: 'restart_login', 516: 'start_logout' }[
                                   value?.code
                               ] ?? null,
+                          stanza: describeNode(stanza),
+                          recent: recent.slice(),
                       }
                     : {
                           kind: 'failure',
@@ -103,6 +144,8 @@ function installWWebFailureParserHook() {
                           // 402 TEMP_BANNED: segundos hasta que se levanta
                           expire: stanza.attrs?.expire ?? null,
                           attrs: stanza.attrs ?? null,
+                          stanza: describeNode(stanza),
+                          recent: recent.slice(),
                       };
             window.onWWebConnectionFailure?.(failure)?.catch?.(() => {});
         } catch (ignoredError) {
