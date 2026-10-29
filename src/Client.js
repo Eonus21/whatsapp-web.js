@@ -110,6 +110,60 @@ function installWWebFailureParserHook() {
     prototype.__wwjsFailureHookInstalled = true;
 }
 
+// Puppeteer serializes this function into the WhatsApp Web page.
+// "Account restricted" (reachout timelock) and the monthly cap on new chats
+// never travel as a failure or stream error: they arrive as MEX notifications
+// (also fetched on app launch) that WhatsApp Web stores in userPrefsIdb. The
+// two keys are watched there and the current state is returned.
+function installWWebAccountRestrictionsWatch() {
+    const { userPrefsIdb } = window.require('WAWebUserPrefsIndexedDBStorage');
+    const timelockKey = 'WAReachoutTimelockState';
+    const cappingKey = 'WANewChatMessageCappingData';
+    const attempt = (fn) => {
+        try {
+            return fn() ?? null;
+        } catch (ignoredError) {
+            return null;
+        }
+    };
+    const abProp = (name) =>
+        attempt(() =>
+            window.require('WAWebABProps').getABPropConfigValue(name),
+        );
+    const cappingUtils = () =>
+        window.require('WAWebIndividualNewChatMessageCappingLimitUtils');
+    const snapshot = () => ({
+        // { state: HIDDEN|VISIBLE, time_enforcement_ends (ms), enforcement_type }
+        reachoutTimelock: attempt(() => userPrefsIdb.get(timelockKey)),
+        // { capping_status: NONE|FIRST_WARNING|SECOND_WARNING|CAPPED, total_quota, used_quota, cycle_end_timestamp (s), ... }
+        newChatCapping: attempt(() => userPrefsIdb.get(cappingKey)),
+        newChatCapped: attempt(() => cappingUtils().isUserCapped()),
+        newChatCappingLimit: abProp(
+            'wa_individual_new_chat_thread_capping_limit',
+        ),
+        newChatCappingKillSwitch: abProp('wa_nct_capping_kill_switch_enabled'),
+    });
+
+    if (!userPrefsIdb.__wwjsRestrictionsWatchInstalled) {
+        for (const method of ['set', 'remove']) {
+            const original = userPrefsIdb[method];
+            userPrefsIdb[method] = function (key, ...args) {
+                const result = original.call(this, key, ...args);
+                if (key === timelockKey || key === cappingKey) {
+                    Promise.resolve(result)
+                        .then(() =>
+                            window.onWWebAccountRestrictions(snapshot()),
+                        )
+                        .catch(() => {});
+                }
+                return result;
+            };
+        }
+        userPrefsIdb.__wwjsRestrictionsWatchInstalled = true;
+    }
+    return snapshot();
+}
+
 /**
  * Starting point for interacting with the WhatsApp Web API
  * @extends {EventEmitter}
@@ -505,6 +559,27 @@ class Client extends EventEmitter {
                             };
                         }),
                     );
+
+                    // The app-launch fetch may land before or after this
+                    // point: the snapshot covers the first case, the watch
+                    // the second.
+                    try {
+                        await exposeFunctionIfAbsent(
+                            this.pupPage,
+                            'onWWebAccountRestrictions',
+                            (restrictions) => {
+                                this.emit('account_restrictions', restrictions);
+                            },
+                        );
+                        this.emit(
+                            'account_restrictions',
+                            await this.pupPage.evaluate(
+                                installWWebAccountRestrictionsWatch,
+                            ),
+                        );
+                    } catch (ignoredError) {
+                        // Telemetry is best effort and must not delay READY.
+                    }
 
                     /**
                      * Emitted when the client has initialized and is ready to receive messages.
