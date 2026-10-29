@@ -185,6 +185,30 @@ function installWWebStanzaTap() {
     });
     const firstChild = (node) =>
         Array.isArray(node.content) ? node.content.find((c) => c?.tag) : null;
+    // First text/binary content found in the node or its children, as JSON
+    // when it parses (2 KB at most).
+    const mexPayload = (node, depth = 2) => {
+        const content = node?.content;
+        if (typeof content === 'string' || content instanceof Uint8Array) {
+            const text = (
+                typeof content === 'string'
+                    ? content
+                    : new TextDecoder().decode(content)
+            ).slice(0, 2048);
+            try {
+                return JSON.parse(text);
+            } catch (ignoredError) {
+                return text;
+            }
+        }
+        if (depth > 0 && Array.isArray(content)) {
+            for (const child of content) {
+                const payload = mexPayload(child, depth - 1);
+                if (payload != null) return payload;
+            }
+        }
+        return null;
+    };
 
     // An iq error only names the request by id: remember what was asked.
     const sentIqs = new Map();
@@ -241,6 +265,11 @@ function installWWebStanzaTap() {
                         event.request =
                             sentIqs.get(String(node.attrs.id)) ?? null;
                         sentIqs.delete(String(node.attrs.id));
+                    }
+                    if (kind === 'notification' && node.attrs?.type === 'mex') {
+                        // The operation and its data travel as JSON in the content,
+                        // e.g. {"xwa2_notify_account_reachout_timelock": {...}}
+                        event.payload = mexPayload(node);
                     }
                     window.onWWebStanza(event).catch(() => {});
                 }
