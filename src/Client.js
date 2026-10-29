@@ -1355,11 +1355,35 @@ class Client extends EventEmitter {
                     window.WWebJS.getMessageModel(msg),
                 );
             });
+            // When the server rejects a sent message WhatsApp Web only keeps
+            // ack -1 (and an errorCode for 475), dropping the server's code.
+            // Keep it on the message so the ack event can carry it.
+            const SendMsgJob = window.require('WAWebSendMsgJob');
+            if (!SendMsgJob.__wwjsNackWatchInstalled) {
+                const encryptAndSendMsg = SendMsgJob.encryptAndSendMsg;
+                SendMsgJob.encryptAndSendMsg = async function (
+                    record,
+                    ...args
+                ) {
+                    const result = await encryptAndSendMsg.call(
+                        this,
+                        record,
+                        ...args,
+                    );
+                    if (result?.error != null && record?.data) {
+                        record.data.__wwjsNackCode = Number(result.error);
+                    }
+                    return result;
+                };
+                SendMsgJob.__wwjsNackWatchInstalled = true;
+            }
+
             Msg.on('change:ack', (msg, ack) => {
-                window.onMessageAckEvent(
-                    window.WWebJS.getMessageModel(msg),
-                    ack,
-                );
+                const model = window.WWebJS.getMessageModel(msg);
+                if (msg.__wwjsNackCode != null) {
+                    model.nackCode = msg.__wwjsNackCode;
+                }
+                window.onMessageAckEvent(model, ack);
             });
             Msg.on('change:isUnsentMedia', (msg, unsent) => {
                 if (msg.id.fromMe && !unsent)

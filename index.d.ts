@@ -1189,6 +1189,10 @@ declare namespace WAWebJS {
     export interface Message {
         /** ACK status for the message */
         ack: MessageAck;
+        /** Error code the server sent back when it rejected this message (ack -1), e.g. 475 = monthly cap on new chats reached */
+        nackCode?: number;
+        /** WhatsApp Web's reason for a failed send, e.g. 'UserReachedMaxMonthlyLimitForNewMessages' or 'Acp2Restricted' */
+        sendErrorCode?: string;
         /** If the message was sent to a group, this field will contain the user that sent the message. */
         author?: string;
         /** String that represents from which device type the message was sent */
