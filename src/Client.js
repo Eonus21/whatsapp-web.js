@@ -157,6 +157,103 @@ function installWWebFailureParserHook() {
 }
 
 // Puppeteer serializes this function into the WhatsApp Web page.
+// Every stanza from the server is decoded through WAWap.decodeStanza in the
+// page, so the codes WhatsApp Web drops or never surfaces (nacks of any
+// class, iq errors, error receipts, ib and notification stanzas, the login
+// success attrs) are reported from there as they arrive.
+function installWWebStanzaTap() {
+    const Wap = window.require('WAWap');
+    if (Wap.__wwjsStanzaTapInstalled) return;
+
+    const describeNode = (node, depth = 1) => ({
+        tag: node.tag,
+        attrs: node.attrs
+            ? Object.fromEntries(
+                  Object.entries(node.attrs).map(([key, value]) => [
+                      key,
+                      String(value),
+                  ]),
+              )
+            : null,
+        children:
+            depth > 0 && Array.isArray(node.content)
+                ? node.content
+                      .filter((child) => child?.tag)
+                      .slice(0, 10)
+                      .map((child) => describeNode(child, depth - 1))
+                : null,
+    });
+    const firstChild = (node) =>
+        Array.isArray(node.content) ? node.content.find((c) => c?.tag) : null;
+
+    // An iq error only names the request by id: remember what was asked.
+    const sentIqs = new Map();
+    const encodeStanza = Wap.encodeStanza;
+    Wap.encodeStanza = function (node, ...args) {
+        try {
+            if (node?.tag === 'iq' && node.attrs?.id != null) {
+                sentIqs.set(String(node.attrs.id), {
+                    xmlns: node.attrs.xmlns ?? null,
+                    type: node.attrs.type ?? null,
+                    child: firstChild(node)?.tag ?? null,
+                });
+                if (sentIqs.size > 200) {
+                    sentIqs.delete(sentIqs.keys().next().value);
+                }
+            }
+        } catch (ignoredError) {
+            // Diagnostics must never change what WhatsApp Web sends.
+        }
+        return encodeStanza.call(this, node, ...args);
+    };
+
+    const classify = (node) => {
+        const attrs = node.attrs ?? {};
+        switch (node.tag) {
+            case 'ack':
+                return attrs.error != null ? 'nack' : null;
+            case 'iq':
+                return attrs.type === 'error' ? 'iq_error' : null;
+            case 'receipt':
+                return attrs.type === 'server-error' || attrs.error != null
+                    ? 'receipt_error'
+                    : null;
+            case 'ib':
+            case 'notification':
+            case 'success':
+                return node.tag;
+            default:
+                return null;
+        }
+    };
+
+    const decodeStanza = Wap.decodeStanza;
+    Wap.decodeStanza = function (...args) {
+        return decodeStanza.apply(this, args).then((node) => {
+            try {
+                const kind = node && classify(node);
+                if (kind) {
+                    const event = { kind, stanza: describeNode(node) };
+                    if (kind === 'iq_error') {
+                        const error = firstChild(node);
+                        event.code = error?.attrs?.code ?? null;
+                        event.text = error?.attrs?.text ?? null;
+                        event.request =
+                            sentIqs.get(String(node.attrs.id)) ?? null;
+                        sentIqs.delete(String(node.attrs.id));
+                    }
+                    window.onWWebStanza(event).catch(() => {});
+                }
+            } catch (ignoredError) {
+                // Diagnostics must never change WhatsApp Web's behavior.
+            }
+            return node;
+        });
+    };
+    Wap.__wwjsStanzaTapInstalled = true;
+}
+
+// Puppeteer serializes this function into the WhatsApp Web page.
 // "Account restricted" (reachout timelock) and the monthly cap on new chats
 // never travel as a failure or stream error: they arrive as MEX notifications
 // (also fetched on app launch) that WhatsApp Web stores in userPrefsIdb. The
@@ -329,6 +426,14 @@ class Client extends EventEmitter {
                     },
                 );
                 await this.pupPage.evaluate(installWWebFailureParserHook);
+                await exposeFunctionIfAbsent(
+                    this.pupPage,
+                    'onWWebStanza',
+                    (event) => {
+                        this.emit('wa_stanza', event);
+                    },
+                );
+                await this.pupPage.evaluate(installWWebStanzaTap);
             } catch (ignoredError) {
                 // Telemetry is best effort and must not interrupt authentication.
             }
