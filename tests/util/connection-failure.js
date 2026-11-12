@@ -85,7 +85,19 @@ describe('wa_connection_failure telemetry', function () {
         await new Promise((resolve) => setImmediate(resolve));
 
         expect(results[0]).to.deep.equal({ success: removed.parsed });
-        expect(failures).to.deep.equal([
+        // Newer telemetry commits add expire / attrs / recent / stanza; the
+        // core classification must stay stable.
+        expect(failures.every((f) => 'stanza' in f && 'recent' in f)).to.equal(
+            true,
+        );
+        const core = failures.map((failure) => {
+            const copy = { ...failure };
+            for (const key of ['expire', 'attrs', 'recent', 'stanza']) {
+                delete copy[key];
+            }
+            return copy;
+        });
+        expect(core).to.deep.equal([
             {
                 kind: 'stream_error',
                 type: 'device_removed',
