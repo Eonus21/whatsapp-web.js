@@ -110,6 +110,60 @@ function installWWebFailureParserHook() {
     prototype.__wwjsFailureHookInstalled = true;
 }
 
+// Puppeteer serializes this function into the WhatsApp Web page.
+// "Account restricted" (reachout timelock) and the monthly cap on new chats
+// never travel as a failure or stream error: they arrive as MEX notifications
+// (also fetched on app launch) that WhatsApp Web stores in userPrefsIdb. The
+// two keys are watched there and the current state is returned.
+function installWWebAccountRestrictionsWatch() {
+    const { userPrefsIdb } = window.require('WAWebUserPrefsIndexedDBStorage');
+    const timelockKey = 'WAReachoutTimelockState';
+    const cappingKey = 'WANewChatMessageCappingData';
+    const attempt = (fn) => {
+        try {
+            return fn() ?? null;
+        } catch (ignoredError) {
+            return null;
+        }
+    };
+    const abProp = (name) =>
+        attempt(() =>
+            window.require('WAWebABProps').getABPropConfigValue(name),
+        );
+    const cappingUtils = () =>
+        window.require('WAWebIndividualNewChatMessageCappingLimitUtils');
+    const snapshot = () => ({
+        // { state: HIDDEN|VISIBLE, time_enforcement_ends (ms), enforcement_type }
+        reachoutTimelock: attempt(() => userPrefsIdb.get(timelockKey)),
+        // { capping_status: NONE|FIRST_WARNING|SECOND_WARNING|CAPPED, total_quota, used_quota, cycle_end_timestamp (s), ... }
+        newChatCapping: attempt(() => userPrefsIdb.get(cappingKey)),
+        newChatCapped: attempt(() => cappingUtils().isUserCapped()),
+        newChatCappingLimit: abProp(
+            'wa_individual_new_chat_thread_capping_limit',
+        ),
+        newChatCappingKillSwitch: abProp('wa_nct_capping_kill_switch_enabled'),
+    });
+
+    if (!userPrefsIdb.__wwjsRestrictionsWatchInstalled) {
+        for (const method of ['set', 'remove']) {
+            const original = userPrefsIdb[method];
+            userPrefsIdb[method] = function (key, ...args) {
+                const result = original.call(this, key, ...args);
+                if (key === timelockKey || key === cappingKey) {
+                    Promise.resolve(result)
+                        .then(() =>
+                            window.onWWebAccountRestrictions(snapshot()),
+                        )
+                        .catch(() => {});
+                }
+                return result;
+            };
+        }
+        userPrefsIdb.__wwjsRestrictionsWatchInstalled = true;
+    }
+    return snapshot();
+}
+
 /**
  * Starting point for interacting with the WhatsApp Web API
  * @extends {EventEmitter}
@@ -205,6 +259,7 @@ class Client extends EventEmitter {
             await this.pupPage
                 .waitForFunction('window.Debug?.VERSION != undefined', {
                     timeout: authTimeout,
+                    polling: 200,
                     signal: abort.signal,
                 })
                 .catch((err) => {
@@ -273,7 +328,7 @@ class Client extends EventEmitter {
                         state,
                     };
                 },
-                { timeout: authTimeout },
+                { timeout: authTimeout, polling: 200 },
             );
             const needAuthentication = await needAuthHandle.jsonValue();
 
@@ -504,6 +559,30 @@ class Client extends EventEmitter {
                             };
                         }),
                     );
+
+                    // The app-launch fetch may land before or after this
+                    // point: the snapshot covers the first case, the watch
+                    // the second.
+                    try {
+                        await exposeFunctionIfAbsent(
+                            this.pupPage,
+                            'onWWebAccountRestrictions',
+                            (restrictions) => {
+                                this.emit(
+                                    Events.ACCOUNT_RESTRICTIONS,
+                                    restrictions,
+                                );
+                            },
+                        );
+                        this.emit(
+                            Events.ACCOUNT_RESTRICTIONS,
+                            await this.pupPage.evaluate(
+                                installWWebAccountRestrictionsWatch,
+                            ),
+                        );
+                    } catch (ignoredError) {
+                        // Telemetry is best effort and must not delay READY.
+                    }
 
                     /**
                      * Emitted when the client has initialized and is ready to receive messages.
@@ -1354,11 +1433,35 @@ class Client extends EventEmitter {
                     window.WWebJS.getMessageModel(msg),
                 );
             });
+            // When the server rejects a sent message WhatsApp Web only keeps
+            // ack -1 (and an errorCode for 475), dropping the server's code.
+            // Keep it on the message so the ack event can carry it.
+            const SendMsgJob = window.require('WAWebSendMsgJob');
+            if (!SendMsgJob.__wwjsNackWatchInstalled) {
+                const encryptAndSendMsg = SendMsgJob.encryptAndSendMsg;
+                SendMsgJob.encryptAndSendMsg = async function (
+                    record,
+                    ...args
+                ) {
+                    const result = await encryptAndSendMsg.call(
+                        this,
+                        record,
+                        ...args,
+                    );
+                    if (result?.error != null && record?.data) {
+                        record.data.__wwjsNackCode = Number(result.error);
+                    }
+                    return result;
+                };
+                SendMsgJob.__wwjsNackWatchInstalled = true;
+            }
+
             Msg.on('change:ack', (msg, ack) => {
-                window.onMessageAckEvent(
-                    window.WWebJS.getMessageModel(msg),
-                    ack,
-                );
+                const model = window.WWebJS.getMessageModel(msg);
+                if (msg.__wwjsNackCode != null) {
+                    model.nackCode = msg.__wwjsNackCode;
+                }
+                window.onMessageAckEvent(model, ack);
             });
             Msg.on('change:isUnsentMedia', (msg, unsent) => {
                 if (msg.id.fromMe && !unsent)
@@ -1602,15 +1705,19 @@ class Client extends EventEmitter {
         if (this._injectAbort) this._injectAbort.abort();
         this._framenavigatedRegistered = false;
         this.removeAllListeners();
-        if (this.pupPage) {
-            this.pupPage.removeAllListeners();
-        }
         clearTimeout(this._takeoverTimer);
         this._takeoverTimer = null;
         const browser = this.pupBrowser;
+        const page = this.pupPage;
         try {
             if (browser) {
-                browser.removeAllListeners();
+                // Puppeteer's untyped removeAllListeners() DISPOSES the
+                // emitter, after which close() returns immediately without
+                // waiting for the process to exit (every destroy then fell
+                // through to SIGKILL and the temp/user profile was cut
+                // mid-write). Only silence consumer 'disconnected' handlers
+                // here; dispose the emitters after the browser is gone.
+                browser.removeAllListeners('disconnected');
                 // A wedged renderer can make close() hang forever, pinning
                 // this client; a crashed/disconnected browser was never
                 // killed at all. Bound the close, then kill what's left.
@@ -1624,6 +1731,8 @@ class Client extends EventEmitter {
                 if (proc && proc.exitCode === null && !proc.killed) {
                     proc.kill('SIGKILL');
                 }
+                page?.removeAllListeners();
+                browser.removeAllListeners();
             }
         } finally {
             await this.authStrategy.destroy();

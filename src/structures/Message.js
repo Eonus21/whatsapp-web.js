@@ -46,6 +46,21 @@ class Message extends Base {
         this.ack = data.ack;
 
         /**
+         * Error code the server sent back when it rejected this message (ack -1), e.g. 475 = monthly cap on new chats reached
+         * @type {number|undefined}
+         */
+        this.nackCode = data.nackCode;
+
+        /**
+         * WhatsApp Web's reason for a failed send, e.g. 'UserReachedMaxMonthlyLimitForNewMessages' or 'Acp2Restricted'
+         * @type {string|undefined}
+         */
+        this.sendErrorCode =
+            data.errorCode && data.errorCode !== 'NoError'
+                ? data.errorCode
+                : undefined;
+
+        /**
          * Indicates if the message has media available for download
          * @type {boolean}
          */
