@@ -164,6 +164,76 @@ function installWWebAccountRestrictionsWatch() {
     return snapshot();
 }
 
+// Puppeteer serializes this function into the WhatsApp Web page.
+// Drives ready / loading_screen from WhatsApp's own Stream model, the same
+// signals its loading screen renders from, instead of the one-shot hasSynced
+// plus the raw offline-delivery percentage (upstream #201853). A background
+// (non-blocking) offline sync used to flip a connected client back to
+// loading_screen at 99% with no second READY. Returns false when the Stream
+// model is unavailable so the caller can fall back to the legacy READY path.
+function installWWebStreamWatch() {
+    const streamModel = window.require('WAWebStreamModel');
+    const Stream = streamModel && streamModel.Stream;
+    const M = streamModel && streamModel.StreamMode;
+    const I = streamModel && streamModel.StreamInfo;
+    if (!Stream || !M || !I || typeof Stream.on !== 'function') return false;
+
+    // WA >= 2.3000.1046055909 moved displayInfo out of the model into
+    // WAWebStreamGetters. Whichever a build has answers.
+    const displayInfo = () => {
+        try {
+            const getters = window.require('WAWebStreamGetters');
+            if (getters && typeof getters.getDisplayInfo === 'function') {
+                const value = getters.getDisplayInfo(Stream);
+                if (value !== undefined) return value;
+            }
+        } catch (ignoredError) {
+            // fall through to the model attribute
+        }
+        return Stream.displayInfo;
+    };
+    const resolveScreen = () => {
+        switch (Stream.mode) {
+            case M.MAIN:
+                return displayInfo() === I.NORMAL ? 'CONNECTED' : 'LOADING';
+            case M.QR:
+                return 'QR';
+            case M.OFFLINE:
+                return 'DISCONNECTED';
+            case M.SYNCING:
+                return 'LOADING';
+            default:
+                return 'ERROR';
+        }
+    };
+    const progress = () => {
+        try {
+            return window
+                .require('WAWebOfflineHandler')
+                .OfflineMessageHandler.getOfflineDeliveryProgress();
+        } catch (ignoredError) {
+            return 0;
+        }
+    };
+
+    if (!window.__wwjsStreamWatch) {
+        const state = { lastScreen: null };
+        const notify = () => {
+            const screen = resolveScreen();
+            if (screen === state.lastScreen) return;
+            state.lastScreen = screen;
+            window.onConnectionStateEvent(screen, progress());
+        };
+        // The generic event: change:displayInfo cannot fire where the
+        // attribute is gone, and naming the inputs would break the next
+        // time WA moves them. Backbone only fires on real changes.
+        Stream.on('change', notify);
+        window.__wwjsStreamWatch = { notify, state };
+    }
+    window.__wwjsStreamWatch.notify();
+    return true;
+}
+
 /**
  * Starting point for interacting with the WhatsApp Web API
  * @extends {EventEmitter}
@@ -231,6 +301,9 @@ class Client extends EventEmitter {
 
         this.currentIndexHtml = null;
         this.lastLoggedOut = false;
+        this._framenavigatedPage = null;
+        this._framenavigatedHandler = null;
+        this._streamDriven = false;
         // Keep injection work isolated per Client. Different Client instances
         // still inject in parallel, while calls for this page are serialized.
         this._injectQueue = Promise.resolve();
@@ -331,6 +404,35 @@ class Client extends EventEmitter {
                 { timeout: authTimeout, polling: 200 },
             );
             const needAuthentication = await needAuthHandle.jsonValue();
+
+            /**
+             * Maps WhatsApp's resolved connection screen onto the public
+             * client events. QR and ERROR are intentionally absent: they keep
+             * their own code paths and emit nothing here.
+             * @event Client#ready
+             * @event Client#loading_screen
+             */
+            const EMIT_BY_SCREEN = {
+                CONNECTED: () => [Events.READY],
+                LOADING: (percent) => [
+                    Events.LOADING_SCREEN,
+                    percent,
+                    'WhatsApp',
+                ],
+                DISCONNECTED: (percent) => [
+                    Events.LOADING_SCREEN,
+                    percent,
+                    'WhatsApp',
+                ],
+            };
+            await exposeFunctionIfAbsent(
+                this.pupPage,
+                'onConnectionStateEvent',
+                (screen, percent) => {
+                    const args = EMIT_BY_SCREEN[screen]?.(percent);
+                    if (args) this.emit(...args);
+                },
+            );
 
             if (needAuthentication.need) {
                 const { failed, failureEventPayload, restart } =
@@ -435,6 +537,27 @@ class Client extends EventEmitter {
                         window
                             .require('WAWebConnModel')
                             .Conn.on('change:ref', onRefChange); // future QR changes
+
+                        // The synced handler subscribes too late for a scan:
+                        // surface LOADING as soon as the stream starts syncing.
+                        try {
+                            const { Stream, StreamMode } =
+                                window.require('WAWebStreamModel');
+                            if (Stream && StreamMode) {
+                                const onScanned = () => {
+                                    if (Stream.mode !== StreamMode.SYNCING)
+                                        return;
+                                    Stream.off('change:mode', onScanned);
+                                    window.onConnectionStateEvent?.(
+                                        'LOADING',
+                                        0,
+                                    );
+                                };
+                                Stream.on('change:mode', onScanned);
+                            }
+                        } catch (ignoredError) {
+                            // Stream model unavailable: legacy path only.
+                        }
 
                         // Remove QR listener once authentication succeeds
                         window
@@ -584,11 +707,27 @@ class Client extends EventEmitter {
                         // Telemetry is best effort and must not delay READY.
                     }
 
-                    /**
-                     * Emitted when the client has initialized and is ready to receive messages.
-                     * @event Client#ready
-                     */
-                    this.emit(Events.READY);
+                    // Connection lifecycle: subscribe to WhatsApp's own
+                    // Stream model now that ClientInfo exists and fire once
+                    // for the current state (READY when MAIN/NORMAL). Falls
+                    // back to the legacy one-shot READY when the model is
+                    // missing so a WA rename can never swallow READY.
+                    let streamDriven = false;
+                    try {
+                        streamDriven = await this.pupPage.evaluate(
+                            installWWebStreamWatch,
+                        );
+                    } catch (ignoredError) {
+                        streamDriven = false;
+                    }
+                    this._streamDriven = streamDriven === true;
+                    if (!this._streamDriven) {
+                        /**
+                         * Emitted when the client has initialized and is ready to receive messages.
+                         * @event Client#ready
+                         */
+                        this.emit(Events.READY);
+                    }
                     this.authStrategy.afterAuthReady();
                     this.clickNewVersionModalButton();
                 },
@@ -598,6 +737,7 @@ class Client extends EventEmitter {
                 this.pupPage,
                 'onOfflineProgressUpdateEvent',
                 async (percent) => {
+                    if (this._streamDriven) return; // Stream model owns loading_screen
                     if (lastPercent !== percent) {
                         lastPercent = percent;
                         this.emit(Events.LOADING_SCREEN, percent, 'WhatsApp'); // Message is hardcoded as "WhatsApp" for now
@@ -738,6 +878,11 @@ class Client extends EventEmitter {
      * Sets up events and requirements, kicks off authentication request
      */
     async initialize({ bypassInjectQueue = false } = {}) {
+        // A navigation task from a previous page must not resume auth
+        // setup or start injection on this initialization (upstream #201943).
+        this._unregisterFramenavigatedHandler();
+        this.lastLoggedOut = false;
+
         let /**
              * @type {puppeteer.Browser}
              */
@@ -853,36 +998,72 @@ class Client extends EventEmitter {
     }
 
     _registerFramenavigatedHandler() {
-        if (this._framenavigatedRegistered) return;
-        this._framenavigatedRegistered = true;
+        const page = this.pupPage;
+        if (this._framenavigatedPage === page) return;
+        this._unregisterFramenavigatedHandler();
 
-        this.pupPage.on('framenavigated', (frame) => {
-            this._handleFrameNavigated(frame).catch((error) => {
-                // EventEmitter does not handle rejected promises returned by
-                // async listeners. Surface the client error without turning it
-                // into an unhandled rejection that terminates Node.js.
+        // The handler captures its page and registration and re-checks that
+        // ownership before every remaining step, so a continuation from an
+        // old page cannot resume auth hooks or inject into a newer page after
+        // destroy()/initialize() (upstream #201943).
+        const isCurrentPage = () =>
+            this.pupPage === page &&
+            this._framenavigatedHandler === onFrameNavigated;
+        const onFrameNavigated = (frame) => {
+            const handled = this._handleFrameNavigated(
+                frame,
+                page,
+                isCurrentPage,
+            );
+            // EventEmitter does not handle rejected promises returned by
+            // async listeners. Surface the client error on this branch so it
+            // never becomes an unhandled rejection that terminates Node.js;
+            // the returned promise still rejects for direct callers.
+            handled.catch((error) => {
+                if (!isCurrentPage()) return; // stale page: nothing to report
                 this.emit('inject_error', error);
             });
-        });
+            return handled;
+        };
+
+        this._framenavigatedPage = page;
+        this._framenavigatedHandler = onFrameNavigated;
+        page.on('framenavigated', onFrameNavigated);
     }
 
-    async _handleFrameNavigated(frame) {
-        if (frame.parentFrame() !== null) return;
+    _unregisterFramenavigatedHandler() {
+        if (this._framenavigatedHandler && this._framenavigatedPage) {
+            this._framenavigatedPage.off(
+                'framenavigated',
+                this._framenavigatedHandler,
+            );
+        }
+        this._framenavigatedPage = null;
+        this._framenavigatedHandler = null;
+    }
+
+    async _handleFrameNavigated(frame, page, isCurrentPage) {
+        if (!isCurrentPage() || frame.parentFrame() !== null) return;
 
         const isLogout =
             frame.url().includes('post_logout=1') || this.lastLoggedOut;
 
         if (isLogout) {
             this.emit(Events.DISCONNECTED, 'LOGOUT');
+            if (!isCurrentPage()) return;
             await this.authStrategy.logout();
+            if (!isCurrentPage()) return;
             await this.authStrategy.beforeBrowserInitialized();
+            if (!isCurrentPage()) return;
             await this.authStrategy.afterBrowserInitialized();
+            if (!isCurrentPage()) return;
             this.lastLoggedOut = false;
         }
 
-        const storeAvailable = await this.pupPage.evaluate(() => {
+        const storeAvailable = await page.evaluate(() => {
             return typeof window.WWebJS !== 'undefined';
         });
+        if (!isCurrentPage()) return;
 
         if (!isLogout && storeAvailable) return;
 
@@ -1703,12 +1884,11 @@ class Client extends EventEmitter {
      */
     async destroy() {
         if (this._injectAbort) this._injectAbort.abort();
-        this._framenavigatedRegistered = false;
+        this._unregisterFramenavigatedHandler();
         this.removeAllListeners();
         clearTimeout(this._takeoverTimer);
         this._takeoverTimer = null;
         const browser = this.pupBrowser;
-        const page = this.pupPage;
         try {
             if (browser) {
                 // Puppeteer's untyped removeAllListeners() DISPOSES the
@@ -1717,7 +1897,7 @@ class Client extends EventEmitter {
                 // through to SIGKILL and the temp/user profile was cut
                 // mid-write). Only silence consumer 'disconnected' handlers
                 // here; dispose the emitters after the browser is gone.
-                browser.removeAllListeners('disconnected');
+                browser.removeAllListeners?.('disconnected');
                 // A wedged renderer can make close() hang forever, pinning
                 // this client; a crashed/disconnected browser was never
                 // killed at all. Bound the close, then kill what's left.
@@ -1731,8 +1911,9 @@ class Client extends EventEmitter {
                 if (proc && proc.exitCode === null && !proc.killed) {
                     proc.kill('SIGKILL');
                 }
-                page?.removeAllListeners();
-                browser.removeAllListeners();
+                // Page listeners stay with their owners (#201943 tests rely
+                // on it); the browser emitter is disposed now that it is gone.
+                browser.removeAllListeners?.();
             }
         } finally {
             await this.authStrategy.destroy();
@@ -3915,5 +4096,8 @@ class Client extends EventEmitter {
         );
     }
 }
+
+// Exposed for unit tests (page-side helper).
+Client._installWWebStreamWatch = installWWebStreamWatch;
 
 module.exports = Client;
