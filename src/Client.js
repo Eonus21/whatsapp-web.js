@@ -69,10 +69,49 @@ function installWWebFailureParserHook() {
         // Raw reason codes are still useful when the enum is unavailable.
     }
 
+    // Shallow view of a stanza: device_removed and similar stream errors can
+    // carry attrs or child nodes the parsed result drops.
+    const describeNode = (node, depth = 2) => ({
+        tag: node.tag,
+        attrs: node.attrs
+            ? Object.fromEntries(
+                  Object.entries(node.attrs).map(([key, value]) => [
+                      key,
+                      String(value),
+                  ]),
+              )
+            : null,
+        children:
+            depth > 0 && Array.isArray(node.content)
+                ? node.content
+                      .filter((child) => child?.tag)
+                      .slice(0, 20)
+                      .map((child) => describeNode(child, depth - 1))
+                : null,
+    });
+
+    // WhatsApp may announce a restriction just before dropping the device,
+    // so the last ib/notification stanzas travel with the failure.
+    const recent = [];
+    let lastRecentStanza = null;
+
     const originalParse = prototype.parse;
     prototype.parse = function (stanza) {
         const result = originalParse.call(this, stanza);
         const tag = stanza?.tag;
+        if (tag === 'ib' || tag === 'notification') {
+            try {
+                // Several parsers may try the same stanza
+                if (stanza !== lastRecentStanza) {
+                    lastRecentStanza = stanza;
+                    recent.push({ at: Date.now(), ...describeNode(stanza) });
+                    if (recent.length > 10) recent.shift();
+                }
+            } catch (ignoredError) {
+                // Diagnostics must never change WhatsApp Web's parser behavior.
+            }
+            return result;
+        }
         if (tag !== 'stream:error' && tag !== 'failure') return result;
 
         try {
@@ -91,6 +130,8 @@ function installWWebFailureParserHook() {
                               { 515: 'restart_login', 516: 'start_logout' }[
                                   value?.code
                               ] ?? null,
+                          stanza: describeNode(stanza),
+                          recent: recent.slice(),
                       }
                     : {
                           kind: 'failure',
@@ -100,6 +141,11 @@ function installWWebFailureParserHook() {
                                   (name) => reasons[name] === value?.reason,
                               ) ?? null,
                           code: value?.code ?? null,
+                          // 402 TEMP_BANNED: segundos hasta que se levanta
+                          expire: stanza.attrs?.expire ?? null,
+                          attrs: stanza.attrs ?? null,
+                          stanza: describeNode(stanza),
+                          recent: recent.slice(),
                       };
             window.onWWebConnectionFailure?.(failure)?.catch?.(() => {});
         } catch (ignoredError) {
@@ -108,6 +154,132 @@ function installWWebFailureParserHook() {
         return result;
     };
     prototype.__wwjsFailureHookInstalled = true;
+}
+
+// Puppeteer serializes this function into the WhatsApp Web page.
+// Every stanza from the server is decoded through WAWap.decodeStanza in the
+// page, so the codes WhatsApp Web drops or never surfaces (nacks of any
+// class, iq errors, error receipts, ib and notification stanzas, the login
+// success attrs) are reported from there as they arrive.
+function installWWebStanzaTap() {
+    const Wap = window.require('WAWap');
+    if (Wap.__wwjsStanzaTapInstalled) return;
+
+    const describeNode = (node, depth = 1) => ({
+        tag: node.tag,
+        attrs: node.attrs
+            ? Object.fromEntries(
+                  Object.entries(node.attrs).map(([key, value]) => [
+                      key,
+                      String(value),
+                  ]),
+              )
+            : null,
+        children:
+            depth > 0 && Array.isArray(node.content)
+                ? node.content
+                      .filter((child) => child?.tag)
+                      .slice(0, 10)
+                      .map((child) => describeNode(child, depth - 1))
+                : null,
+    });
+    const firstChild = (node) =>
+        Array.isArray(node.content) ? node.content.find((c) => c?.tag) : null;
+    // First text/binary content found in the node or its children, as JSON
+    // when it parses (2 KB at most).
+    const mexPayload = (node, depth = 2) => {
+        const content = node?.content;
+        if (typeof content === 'string' || content instanceof Uint8Array) {
+            const text = (
+                typeof content === 'string'
+                    ? content
+                    : new TextDecoder().decode(content)
+            ).slice(0, 2048);
+            try {
+                return JSON.parse(text);
+            } catch (ignoredError) {
+                return text;
+            }
+        }
+        if (depth > 0 && Array.isArray(content)) {
+            for (const child of content) {
+                const payload = mexPayload(child, depth - 1);
+                if (payload != null) return payload;
+            }
+        }
+        return null;
+    };
+
+    // An iq error only names the request by id: remember what was asked.
+    const sentIqs = new Map();
+    const encodeStanza = Wap.encodeStanza;
+    Wap.encodeStanza = function (node, ...args) {
+        try {
+            if (node?.tag === 'iq' && node.attrs?.id != null) {
+                sentIqs.set(String(node.attrs.id), {
+                    xmlns: node.attrs.xmlns ?? null,
+                    type: node.attrs.type ?? null,
+                    child: firstChild(node)?.tag ?? null,
+                });
+                if (sentIqs.size > 200) {
+                    sentIqs.delete(sentIqs.keys().next().value);
+                }
+            }
+        } catch (ignoredError) {
+            // Diagnostics must never change what WhatsApp Web sends.
+        }
+        return encodeStanza.call(this, node, ...args);
+    };
+
+    const classify = (node) => {
+        const attrs = node.attrs ?? {};
+        switch (node.tag) {
+            case 'ack':
+                return attrs.error != null ? 'nack' : null;
+            case 'iq':
+                return attrs.type === 'error' ? 'iq_error' : null;
+            case 'receipt':
+                return attrs.type === 'server-error' || attrs.error != null
+                    ? 'receipt_error'
+                    : null;
+            case 'ib':
+            case 'notification':
+            case 'success':
+                return node.tag;
+            default:
+                return null;
+        }
+    };
+
+    const decodeStanza = Wap.decodeStanza;
+    Wap.decodeStanza = function (...args) {
+        return decodeStanza.apply(this, args).then((node) => {
+            try {
+                const kind = node && classify(node);
+                if (kind) {
+                    const event = { kind, stanza: describeNode(node) };
+                    if (kind === 'iq_error') {
+                        const error = firstChild(node);
+                        event.code = error?.attrs?.code ?? null;
+                        event.text = error?.attrs?.text ?? null;
+                        event.request =
+                            sentIqs.get(String(node.attrs.id)) ?? null;
+                        sentIqs.delete(String(node.attrs.id));
+                    }
+                    if (kind === 'notification' && node.attrs?.type === 'mex') {
+                        // The operation and its data travel as JSON in the content,
+                        // e.g. {"xwa2_notify_account_reachout_timelock": {...}}
+                        event.payload = mexPayload(node);
+                    }
+                    window.onWWebStanza(event).catch(() => {});
+                }
+            } catch (ignoredError) {
+                // Diagnostics must never change WhatsApp Web's behavior.
+            }
+            return node;
+        });
+    };
+    Wap.__wwjsStanzaTapInstalled = true;
 }
 
 // Puppeteer serializes this function into the WhatsApp Web page.
@@ -283,6 +455,14 @@ class Client extends EventEmitter {
                     },
                 );
                 await this.pupPage.evaluate(installWWebFailureParserHook);
+                await exposeFunctionIfAbsent(
+                    this.pupPage,
+                    'onWWebStanza',
+                    (event) => {
+                        this.emit('wa_stanza', event);
+                    },
+                );
+                await this.pupPage.evaluate(installWWebStanzaTap);
             } catch (ignoredError) {
                 // Telemetry is best effort and must not interrupt authentication.
             }
