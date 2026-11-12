@@ -568,11 +568,14 @@ class Client extends EventEmitter {
                             this.pupPage,
                             'onWWebAccountRestrictions',
                             (restrictions) => {
-                                this.emit('account_restrictions', restrictions);
+                                this.emit(
+                                    Events.ACCOUNT_RESTRICTIONS,
+                                    restrictions,
+                                );
                             },
                         );
                         this.emit(
-                            'account_restrictions',
+                            Events.ACCOUNT_RESTRICTIONS,
                             await this.pupPage.evaluate(
                                 installWWebAccountRestrictionsWatch,
                             ),
