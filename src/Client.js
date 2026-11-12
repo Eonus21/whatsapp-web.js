@@ -1702,15 +1702,19 @@ class Client extends EventEmitter {
         if (this._injectAbort) this._injectAbort.abort();
         this._framenavigatedRegistered = false;
         this.removeAllListeners();
-        if (this.pupPage) {
-            this.pupPage.removeAllListeners();
-        }
         clearTimeout(this._takeoverTimer);
         this._takeoverTimer = null;
         const browser = this.pupBrowser;
+        const page = this.pupPage;
         try {
             if (browser) {
-                browser.removeAllListeners();
+                // Puppeteer's untyped removeAllListeners() DISPOSES the
+                // emitter, after which close() returns immediately without
+                // waiting for the process to exit (every destroy then fell
+                // through to SIGKILL and the temp/user profile was cut
+                // mid-write). Only silence consumer 'disconnected' handlers
+                // here; dispose the emitters after the browser is gone.
+                browser.removeAllListeners('disconnected');
                 // A wedged renderer can make close() hang forever, pinning
                 // this client; a crashed/disconnected browser was never
                 // killed at all. Bound the close, then kill what's left.
@@ -1724,6 +1728,8 @@ class Client extends EventEmitter {
                 if (proc && proc.exitCode === null && !proc.killed) {
                     proc.kill('SIGKILL');
                 }
+                page?.removeAllListeners();
+                browser.removeAllListeners();
             }
         } finally {
             await this.authStrategy.destroy();
