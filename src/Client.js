@@ -566,8 +566,11 @@ class Client extends EventEmitter {
 
             const needAuthHandle = await this.pupPage.waitForFunction(
                 () => {
-                    const state =
-                        window.require?.('WAWebSocketModel')?.Socket?.state;
+                    const socket = window.require?.('WAWebSocketModel')?.Socket;
+                    const state = socket
+                        ? socket.state
+                        : window.require?.('WAWebBackendEventBus')
+                              ?.BackendEventBus?.socketState;
                     if (
                         !state ||
                         state === 'OPENING' ||
@@ -740,13 +743,15 @@ class Client extends EventEmitter {
                         }
 
                         // Remove QR listener once authentication succeeds
-                        window
-                            .require('WAWebSocketModel')
-                            .Socket.on('change:hasSynced', () => {
+                        const socket =
+                            window.require('WAWebSocketModel')?.Socket;
+                        if (socket) {
+                            socket.on('change:hasSynced', () => {
                                 window
                                     .require('WAWebConnModel')
                                     .Conn.off('change:ref', onRefChange);
                             });
+                        }
                     });
                 }
             }
@@ -761,7 +766,19 @@ class Client extends EventEmitter {
                     ) {
                         // refresh qr code
                         await this.pupPage.evaluate(() => {
-                            window.require('WAWebCmd').Cmd.refreshQR();
+                            const Cmd = window.require('WAWebCmd')?.Cmd;
+                            if (typeof Cmd?.refreshQR === 'function') {
+                                return Cmd.refreshQR();
+                            }
+                            const launch = window.require(
+                                'WAWebLaunchSocketUtils',
+                            );
+                            if (typeof launch?.refreshQR === 'function') {
+                                return launch.refreshQR();
+                            }
+                            return window
+                                .require('WAWebBackendEventBus')
+                                ?.BackendEventBus?.triggerRefreshQR?.();
                         });
                     }
                 },
@@ -935,50 +952,69 @@ class Client extends EventEmitter {
                 },
             );
             await this.pupPage.evaluate(() => {
-                const Socket = window.require('WAWebSocketModel').Socket;
-                const Cmd = window.require('WAWebCmd').Cmd;
+                const Socket = window.require('WAWebSocketModel')?.Socket;
+                const Cmd = window.require('WAWebCmd')?.Cmd;
+                const backendBus = window.require('WAWebBackendEventBus');
 
-                const listeners = [
-                    [
-                        Socket,
-                        'change:state',
-                        (_AppState, state) => {
+                const listeners = [];
+                if (Socket) {
+                    listeners.push(
+                        [
+                            Socket,
+                            'change:state',
+                            (_AppState, state) => {
+                                window.onAuthAppStateChangedEvent(state);
+                            },
+                        ],
+                        [
+                            Socket,
+                            'change:hasSynced',
+                            () => {
+                                window.onAppStateHasSyncedEvent();
+                            },
+                        ],
+                    );
+                } else if (
+                    backendBus?.BackendEventBus &&
+                    backendBus.BackendEvent?.SET_SOCKET_STATE
+                ) {
+                    listeners.push([
+                        backendBus.BackendEventBus,
+                        backendBus.BackendEvent.SET_SOCKET_STATE,
+                        (state) => {
                             window.onAuthAppStateChangedEvent(state);
                         },
-                    ],
-                    [
-                        Socket,
-                        'change:hasSynced',
-                        () => {
-                            window.onAppStateHasSyncedEvent();
-                        },
-                    ],
-                    [
-                        Cmd,
-                        'offline_progress_update_from_bridge',
-                        () => {
-                            window.onOfflineProgressUpdateEvent(
-                                window
-                                    .require('WAWebOfflineHandler')
-                                    .OfflineMessageHandler.getOfflineDeliveryProgress(),
-                            );
-                        },
-                    ],
-                    [
-                        Cmd,
-                        'logout',
-                        async () => {
-                            await window.onLogoutEvent();
-                        },
-                    ],
-                    [
-                        Cmd,
-                        'logout_from_bridge',
-                        async () => {
-                            await window.onLogoutEvent();
-                        },
-                    ],
-                ];
+                    ]);
+                }
+                if (Cmd) {
+                    listeners.push(
+                        [
+                            Cmd,
+                            'offline_progress_update_from_bridge',
+                            () => {
+                                window.onOfflineProgressUpdateEvent(
+                                    window
+                                        .require('WAWebOfflineHandler')
+                                        .OfflineMessageHandler.getOfflineDeliveryProgress(),
+                                );
+                            },
+                        ],
+                        [
+                            Cmd,
+                            'logout',
+                            async () => {
+                                await window.onLogoutEvent();
+                            },
+                        ],
+                        [
+                            Cmd,
+                            'logout_from_bridge',
+                            async () => {
+                                await window.onLogoutEvent();
+                            },
+                        ],
+                    );
+                }
 
                 // Clean up old listeners to prevent accumulation on re-inject
                 if (window._wwjsListeners) {
@@ -996,7 +1032,7 @@ class Client extends EventEmitter {
                 // If hasSynced is already true, Backbone won't fire change:hasSynced (no transition).
                 // If hasSynced is false, the listener above will catch the future transition.
                 const storeInjected = typeof window.WWebJS !== 'undefined';
-                if (Socket.hasSynced === true && !storeInjected) {
+                if (Socket?.hasSynced === true && !storeInjected) {
                     window.onAppStateHasSyncedEvent();
                 }
             });
@@ -1288,8 +1324,12 @@ class Client extends EventEmitter {
                         clearInterval(window.codeInterval); // remove existing interval
                     }
                     window.codeInterval = setInterval(async () => {
-                        const state =
-                            window.require('WAWebSocketModel').Socket.state;
+                        const socket =
+                            window.require('WAWebSocketModel')?.Socket;
+                        const state = socket
+                            ? socket.state
+                            : window.require('WAWebBackendEventBus')
+                                  ?.BackendEventBus?.socketState;
                         if (state != 'UNPAIRED' && state != 'UNPAIRED_IDLE') {
                             clearInterval(window.codeInterval);
                             return;
@@ -2813,7 +2853,12 @@ class Client extends EventEmitter {
      */
     async getState() {
         return await this.pupPage.evaluate(() => {
-            return window.require('WAWebSocketModel').Socket.state ?? null;
+            const socket = window.require('WAWebSocketModel')?.Socket;
+            if (socket) return socket.state ?? null;
+            return (
+                window.require('WAWebBackendEventBus')?.BackendEventBus
+                    ?.socketState ?? null
+            );
         });
     }
 
