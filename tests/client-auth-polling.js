@@ -48,11 +48,13 @@ class OfflineAuth extends NoAuth {
         debug = 'ready',
         socket = 'ready',
         state = 'UNPAIRED',
+        socketModel = 'present',
     }) => {
         const trace = (window.fixtureTrace = {
             debugReads: 0,
             socketReads: 0,
             rafRequests: 0,
+            refreshQRCalls: 0,
         });
         window.requestAnimationFrame = () => {
             trace.rafRequests++;
@@ -89,22 +91,44 @@ class OfflineAuth extends NoAuth {
                     handlers.filter((entry) => entry !== handler),
                 );
             }
+            trigger(event, ...args) {
+                for (const handler of this.listeners.get(event) || []) {
+                    handler(...args);
+                }
+            }
         }
 
-        const Socket = Object.assign(new Model(), { hasSynced: false });
         let socketReady = socket === 'ready';
-        Object.defineProperty(Socket, 'state', {
-            get() {
-                trace.socketReads++;
-                if (trace.socketReads === 1 && socket === 'delayed') {
-                    setTimeout(() => (socketReady = true), 50);
-                }
-                return socketReady ? state : 'OPENING';
+        const readState = () => {
+            trace.socketReads++;
+            if (trace.socketReads === 1 && socket === 'delayed') {
+                setTimeout(() => (socketReady = true), 50);
+            }
+            return socketReady ? state : 'OPENING';
+        };
+
+        const Socket = Object.assign(new Model(), { hasSynced: false });
+        Object.defineProperty(Socket, 'state', { get: readState });
+
+        const BackendEventBus = Object.assign(new Model(), {
+            triggerRefreshQR() {
+                trace.refreshQRCalls++;
             },
+        });
+        Object.defineProperty(BackendEventBus, 'socketState', {
+            get: readState,
         });
 
         const modules = {
-            WAWebSocketModel: { Socket },
+            WAWebSocketModel: socketModel === 'missing' ? null : { Socket },
+            WAWebBackendEventBus: {
+                BackendEvent: {
+                    SET_SOCKET_STATE: 'set_socket_state',
+                    REFRESH_QR: 'refresh_qr',
+                },
+                BackendEventBus,
+            },
+            WAWebLaunchSocketUtils: {},
             WAWebCmd: { Cmd: new Model() },
             WAWebConnModel: {
                 Conn: Object.assign(new Model(), { ref: 'synthetic-ref' }),
@@ -289,5 +313,62 @@ describe('Client authentication polling (offline)', function () {
         expect(qr.called).to.equal(false);
         expect(authenticated.called).to.equal(false);
         expect(ready.called).to.equal(false);
+    });
+
+    describe('standalone /login/ page (no WAWebSocketModel)', function () {
+        it('should emit one QR from the BackendEventBus socket state', async function () {
+            auth.fixture = { socketModel: 'missing' };
+            const qrReceived = new Promise((resolve) =>
+                client.once('qr', resolve),
+            );
+
+            await client.initialize();
+            await qrReceived;
+
+            expect(qr.calledOnce).to.equal(true);
+            expect(qr.firstCall.args[0]).to.equal(
+                'synthetic-ref,BAUG,AQID,synthetic-only,offline-fixture',
+            );
+            expect(authenticated.called).to.equal(false);
+            expect(ready.called).to.equal(false);
+            expect(await client.getState()).to.equal('UNPAIRED');
+        });
+
+        it('should refresh the QR through the BackendEventBus when idle', async function () {
+            auth.fixture = { socketModel: 'missing' };
+            const qrReceived = new Promise((resolve) =>
+                client.once('qr', resolve),
+            );
+            await client.initialize();
+            await qrReceived;
+
+            await client.pupPage.evaluate(() => {
+                window
+                    .require('WAWebBackendEventBus')
+                    .BackendEventBus.trigger(
+                        'set_socket_state',
+                        'UNPAIRED_IDLE',
+                    );
+            });
+            await client.pupPage.waitForFunction(
+                () => window.fixtureTrace.refreshQRCalls === 1,
+                { timeout: 3000, polling: 50 },
+            );
+
+            expect(authenticated.called).to.equal(false);
+            expect(ready.called).to.equal(false);
+        });
+
+        it('should still reject when the login page state stays OPENING', async function () {
+            auth.fixture = { socketModel: 'missing', socket: 'never' };
+
+            await expect(client.initialize()).to.be.rejectedWith(
+                'Waiting failed: 1000ms exceeded',
+            );
+
+            expect(qr.called).to.equal(false);
+            expect(authenticated.called).to.equal(false);
+            expect(ready.called).to.equal(false);
+        });
     });
 });
